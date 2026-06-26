@@ -49,13 +49,14 @@ func ForChannel(category Category, channel, message string) Diagnostic {
 }
 
 func (d Diagnostic) Error() string {
+	message := singleLine(d.Message)
 	if d.Message == "" {
 		return string(d.Category)
 	}
 	if d.Channel != "" {
-		return fmt.Sprintf("%s: %s: %s", d.Category, d.Channel, d.Message)
+		return fmt.Sprintf("%s: %s: %s", d.Category, d.Channel, message)
 	}
-	return fmt.Sprintf("%s: %s", d.Category, d.Message)
+	return fmt.Sprintf("%s: %s", d.Category, message)
 }
 
 func FromError(err error) Diagnostic {
@@ -91,10 +92,14 @@ func ExitCode(category Category) int {
 }
 
 func WriteFailure(w io.Writer, err error) int {
+	return WriteFailureWithRedactor(w, err, NewRedactor())
+}
+
+func WriteFailureWithRedactor(w io.Writer, err error, redactor Redactor) int {
 	diagnostic := FromError(err)
 	if diagnostic.Category == CategorySuccess {
 		return ExitSuccess
 	}
-	fmt.Fprintln(w, diagnostic.Error())
+	fmt.Fprintln(w, redactor.Redact(diagnostic.Error()))
 	return ExitCode(diagnostic.Category)
 }

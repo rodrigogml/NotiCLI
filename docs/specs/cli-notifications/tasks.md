@@ -69,10 +69,10 @@ Ref: contracts/cli.md Result Semantics; spec.md FR-007..FR-011
 
 Ref: constitution.md Secure Configuration and Secret Handling; spec.md FR-010
 
-- [ ] 2.3.1 Implementar redacao de tokens, senhas e webhook URLs.
-- [ ] 2.3.2 Padronizar saida de erro em linha unica por padrao.
-- [ ] 2.3.3 Incluir canal afetado em falhas de canal.
-- [ ] 2.3.4 Testar que segredos nao aparecem em mensagens de erro.
+- [x] 2.3.1 Implementar redacao de tokens, senhas e webhook URLs. <!-- implementado em diagnostics.Redactor -->
+- [x] 2.3.2 Padronizar saida de erro em linha unica por padrao. <!-- diagnostics.WriteFailure normaliza whitespace -->
+- [x] 2.3.3 Incluir canal afetado em falhas de canal. <!-- diagnostics.ForChannel testado -->
+- [x] 2.3.4 Testar que segredos nao aparecem em mensagens de erro. <!-- TestWriteFailureRedactsSensitiveValues -->
 
 ---
 

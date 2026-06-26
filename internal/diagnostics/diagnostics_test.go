@@ -3,6 +3,7 @@ package diagnostics_test
 import (
 	"bytes"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/rodrigogml/NotiCLI/internal/diagnostics"
@@ -56,11 +57,43 @@ func TestFromErrorMapsUnknownErrorToInternalError(t *testing.T) {
 func TestWriteFailureEmitsOneLineAndReturnsExitCode(t *testing.T) {
 	var stderr bytes.Buffer
 
-	code := diagnostics.WriteFailure(&stderr, diagnostics.New(diagnostics.CategoryInvalidInput, "missing required flag --channel"))
+	code := diagnostics.WriteFailure(&stderr, diagnostics.New(diagnostics.CategoryInvalidInput, "missing\nrequired\tflag --channel"))
 	if code != diagnostics.ExitInvalidInput {
 		t.Fatalf("exit code = %d, want %d", code, diagnostics.ExitInvalidInput)
 	}
 	if got := stderr.String(); got != "invalid_input: missing required flag --channel\n" {
+		t.Fatalf("stderr = %q", got)
+	}
+}
+
+func TestWriteFailureRedactsSensitiveValues(t *testing.T) {
+	var stderr bytes.Buffer
+	err := diagnostics.New(
+		diagnostics.CategoryDeliveryFailure,
+		"token=123456:ABCDEFGHIJKLMNOPQRSTUVWXYZ password=hunter2 webhook https://hooks.slack.com/services/T000/B000/secret",
+	)
+
+	diagnostics.WriteFailureWithRedactor(&stderr, err, diagnostics.NewRedactor("hunter2"))
+	got := stderr.String()
+	for _, leaked := range []string{
+		"123456:ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+		"hunter2",
+		"https://hooks.slack.com/services/T000/B000/secret",
+	} {
+		if strings.Contains(got, leaked) {
+			t.Fatalf("stderr leaked %q in %q", leaked, got)
+		}
+	}
+	if strings.Count(got, diagnostics.Redacted) < 3 {
+		t.Fatalf("stderr = %q, want redacted sensitive values", got)
+	}
+}
+
+func TestWriteFailureIncludesChannelForChannelSpecificDiagnostics(t *testing.T) {
+	var stderr bytes.Buffer
+
+	diagnostics.WriteFailure(&stderr, diagnostics.ForChannel(diagnostics.CategoryDeliveryFailure, "slack", "provider rejected request"))
+	if got := stderr.String(); got != "delivery_failure: slack: provider rejected request\n" {
 		t.Fatalf("stderr = %q", got)
 	}
 }
