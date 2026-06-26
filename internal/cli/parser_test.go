@@ -2,6 +2,7 @@ package cli_test
 
 import (
 	"bytes"
+	"path/filepath"
 	"testing"
 
 	"github.com/rodrigogml/NotiCLI/internal/cli"
@@ -9,7 +10,7 @@ import (
 )
 
 func TestParseSendMapsFlagsToNotificationRequest(t *testing.T) {
-	request, err := cli.Parse([]string{
+	request, err := cli.ParseWithExecutablePath([]string{
 		"send",
 		"--config", "./noticli.json",
 		"--recipient", "ops",
@@ -18,7 +19,7 @@ func TestParseSendMapsFlagsToNotificationRequest(t *testing.T) {
 		"--message", "Nightly backup failed",
 		"--attach", "./a.txt",
 		"--attach", "./b.txt",
-	})
+	}, filepath.Join(t.TempDir(), "noticli"))
 	if err != nil {
 		t.Fatalf("Parse() error = %v", err)
 	}
@@ -46,26 +47,60 @@ func TestParseSendMapsFlagsToNotificationRequest(t *testing.T) {
 	}
 }
 
+func TestParseSendDefaultsConfigPathToExecutableDirectory(t *testing.T) {
+	executablePath := filepath.Join(t.TempDir(), "bin", "noticli")
+
+	request, err := cli.ParseWithExecutablePath([]string{
+		"send",
+		"--recipient", "ops",
+		"--channel", "email",
+		"--title", "Backup failed",
+		"--message", "Nightly backup failed",
+	}, executablePath)
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+
+	want := filepath.Join(filepath.Dir(executablePath), cli.DefaultConfigFileName)
+	if request.ConfigPath != want {
+		t.Fatalf("ConfigPath = %q, want %q", request.ConfigPath, want)
+	}
+}
+
+func TestParseSendRejectsEmptyExplicitConfigPath(t *testing.T) {
+	_, err := cli.ParseWithExecutablePath([]string{
+		"send",
+		"--config", "",
+		"--recipient", "ops",
+		"--channel", "email",
+		"--title", "Backup failed",
+		"--message", "Nightly backup failed",
+	}, filepath.Join(t.TempDir(), "noticli"))
+	if err == nil {
+		t.Fatal("Parse() error = nil, want empty config error")
+	}
+}
+
 func TestParseSendRejectsMissingRequiredFlags(t *testing.T) {
-	_, err := cli.Parse([]string{
+	_, err := cli.ParseWithExecutablePath([]string{
 		"send",
 		"--channel", "email",
 		"--title", "Backup failed",
 		"--message", "Nightly backup failed",
-	})
+	}, filepath.Join(t.TempDir(), "noticli"))
 	if err == nil {
 		t.Fatal("Parse() error = nil, want missing recipient error")
 	}
 }
 
 func TestParseSendRejectsUnsupportedChannel(t *testing.T) {
-	_, err := cli.Parse([]string{
+	_, err := cli.ParseWithExecutablePath([]string{
 		"send",
 		"--recipient", "ops",
 		"--channel", "sms",
 		"--title", "Backup failed",
 		"--message", "Nightly backup failed",
-	})
+	}, filepath.Join(t.TempDir(), "noticli"))
 	if err == nil {
 		t.Fatal("Parse() error = nil, want unsupported channel error")
 	}

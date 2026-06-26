@@ -4,16 +4,19 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 
+	"github.com/rodrigogml/NotiCLI/internal/diagnostics"
 	"github.com/rodrigogml/NotiCLI/internal/notify"
 )
 
 const (
 	CommandSend = "send"
 
-	ExitInternalError = 1
-	ExitInvalidInput  = 2
+	DefaultConfigFileName = "noticli.json"
+	ExitInvalidInput      = diagnostics.ExitInvalidInput
 )
 
 type ParseError struct {
@@ -25,19 +28,24 @@ func (e ParseError) Error() string {
 }
 
 func Parse(args []string) (notify.Request, error) {
+	executablePath, _ := os.Executable()
+	return ParseWithExecutablePath(args, executablePath)
+}
+
+func ParseWithExecutablePath(args []string, executablePath string) (notify.Request, error) {
 	if len(args) == 0 {
 		return notify.Request{}, ParseError{Message: "missing command"}
 	}
 
 	switch args[0] {
 	case CommandSend:
-		return parseSend(args[1:])
+		return parseSend(args[1:], executablePath)
 	default:
 		return notify.Request{}, ParseError{Message: fmt.Sprintf("unknown command %q", args[0])}
 	}
 }
 
-func parseSend(args []string) (notify.Request, error) {
+func parseSend(args []string, executablePath string) (notify.Request, error) {
 	var attachments attachmentFlags
 	var request notify.Request
 
@@ -57,11 +65,25 @@ func parseSend(args []string) (notify.Request, error) {
 		return notify.Request{}, ParseError{Message: fmt.Sprintf("unexpected argument %q", flags.Arg(0))}
 	}
 
+	configProvided := false
+	flags.Visit(func(f *flag.Flag) {
+		if f.Name == "config" {
+			configProvided = true
+		}
+	})
+
+	request.ConfigPath = strings.TrimSpace(request.ConfigPath)
 	request.RecipientID = strings.TrimSpace(request.RecipientID)
 	request.Channel = strings.TrimSpace(request.Channel)
 	request.Title = strings.TrimSpace(request.Title)
 	request.Message = strings.TrimSpace(request.Message)
 
+	if configProvided && request.ConfigPath == "" {
+		return notify.Request{}, ParseError{Message: "empty --config value"}
+	}
+	if request.ConfigPath == "" {
+		request.ConfigPath = DefaultConfigPath(executablePath)
+	}
 	if request.RecipientID == "" {
 		return notify.Request{}, ParseError{Message: "missing required flag --recipient"}
 	}
@@ -89,6 +111,13 @@ func parseSend(args []string) (notify.Request, error) {
 	return request, nil
 }
 
+func DefaultConfigPath(executablePath string) string {
+	if executablePath == "" {
+		return DefaultConfigFileName
+	}
+	return filepath.Join(filepath.Dir(executablePath), DefaultConfigFileName)
+}
+
 func isSupportedChannel(channel string) bool {
 	switch channel {
 	case notify.ChannelEmail, notify.ChannelSlack, notify.ChannelTelegram:
@@ -100,10 +129,8 @@ func isSupportedChannel(channel string) bool {
 
 func Run(args []string, stdout, stderr io.Writer) int {
 	if _, err := Parse(args); err != nil {
-		fmt.Fprintf(stderr, "invalid_input: %s\n", err)
-		return ExitInvalidInput
+		return diagnostics.WriteFailure(stderr, diagnostics.New(diagnostics.CategoryInvalidInput, err.Error()))
 	}
 
-	fmt.Fprintln(stderr, "internal_error: dispatch not implemented")
-	return ExitInternalError
+	return diagnostics.WriteFailure(stderr, diagnostics.New(diagnostics.CategoryInternalError, "dispatch not implemented"))
 }

@@ -60,10 +60,10 @@ Ref: contracts/cli.md Command `noticli send`; spec.md FR-001..FR-003
 
 Ref: contracts/cli.md Result Semantics; spec.md FR-007..FR-011
 
-- [ ] 2.2.1 Definir constantes para categorias e exit codes.
-- [ ] 2.2.2 Mapear erros conhecidos para categorias estaveis.
-- [ ] 2.2.3 Garantir exatamente um resultado final por invocacao.
-- [ ] 2.2.4 Testar mapeamento de cada categoria documentada.
+- [x] 2.2.1 Definir constantes para categorias e exit codes. <!-- implementado em internal/diagnostics -->
+- [x] 2.2.2 Mapear erros conhecidos para categorias estaveis. <!-- diagnostics.FromError preserva Diagnostic e fallback para internal_error -->
+- [x] 2.2.3 Garantir exatamente um resultado final por invocacao. <!-- cli.Run usa diagnostics.WriteFailure para um unico output final de erro -->
+- [x] 2.2.4 Testar mapeamento de cada categoria documentada. <!-- go1.26.4: internal/diagnostics ok; binario validou exit 2 e exit 1 -->
 
 ### 2.3 Implementar Diagnosticos Seguros `[C]`
 

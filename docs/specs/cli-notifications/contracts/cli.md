@@ -10,7 +10,7 @@ Contratos de interface externa para a CLI do NotiCLI.
 
 | Field | Required | Validation | Description |
 |-------|----------|------------|-------------|
-| `--config <path>` | no | Must be readable if provided | Configuration file path; uses documented default when omitted |
+| `--config <path>` | no | Must be readable if provided; empty explicit value is invalid | Configuration file path; when omitted, defaults to `noticli.json` in the executable directory |
 | `--recipient <id>` | yes | Non-empty | Configured recipient identifier |
 | `--channel <name>` | yes | One supported channel | MVP: `email`, `telegram`, `slack` |
 | `--title <text>` | yes | Non-empty | Notification title or subject |
