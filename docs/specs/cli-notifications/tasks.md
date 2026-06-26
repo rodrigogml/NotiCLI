@@ -82,10 +82,10 @@ Ref: constitution.md Secure Configuration and Secret Handling; spec.md FR-010
 
 Ref: data-model.md; spec.md Key Entities
 
-- [ ] 3.1.1 Definir Notification Request, Recipient, Channel Configuration, Attachment e Delivery Result.
-- [ ] 3.1.2 Definir validacoes de campos obrigatorios.
-- [ ] 3.1.3 Definir estados/categorias necessarios para resultados.
-- [ ] 3.1.4 Testar validacoes do modelo de dominio.
+- [x] 3.1.1 Definir Notification Request, Recipient, Channel Configuration, Attachment e Delivery Result. <!-- implementado em internal/notify; inclui Configuration para recipients e channels globais -->
+- [x] 3.1.2 Definir validacoes de campos obrigatorios. <!-- Validate em Request, Configuration, Recipient, ChannelConfig e Attachment -->
+- [x] 3.1.3 Definir estados/categorias necessarios para resultados. <!-- DeliveryState, ResultCategory, SuccessResult e FailureResult -->
+- [x] 3.1.4 Testar validacoes do modelo de dominio. <!-- go1.26.4: internal/notify ok -->
 
 ### 3.2 Implementar Leitura de Configuracao JSON `[A]`
 

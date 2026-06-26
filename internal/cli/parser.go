@@ -119,12 +119,7 @@ func DefaultConfigPath(executablePath string) string {
 }
 
 func isSupportedChannel(channel string) bool {
-	switch channel {
-	case notify.ChannelEmail, notify.ChannelSlack, notify.ChannelTelegram:
-		return true
-	default:
-		return false
-	}
+	return notify.IsSupportedChannel(channel)
 }
 
 func Run(args []string, stdout, stderr io.Writer) int {
