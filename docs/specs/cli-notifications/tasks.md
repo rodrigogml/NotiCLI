@@ -21,27 +21,27 @@ Escopo: implementar o MVP da CLI nao interativa para envio de notificacoes por e
 
 Ref: checklists/requirements.md CHK022; research.md Decision 6
 
-- [ ] 1.1.1 Registrar que modo servico/API local permanece fora do MVP.
-- [ ] 1.1.2 Confirmar que o design deve apenas preservar reutilizacao futura do core.
-- [ ] 1.1.3 Atualizar documentacao se a decisao de escopo mudar.
+- [x] 1.1.1 Registrar que modo servico/API local permanece fora do MVP. <!-- validado em research.md Decision 6 e plan.md Technical Context -->
+- [x] 1.1.2 Confirmar que o design deve apenas preservar reutilizacao futura do core. <!-- validado em plan.md Summary e Structure Decision -->
+- [x] 1.1.3 Atualizar documentacao se a decisao de escopo mudar. <!-- sem mudanca de escopo; CHK022 resolvido em checklists/requirements.md -->
 
 ### 1.2 Inicializar Projeto Go `[A]`
 
 Ref: plan.md Project Structure; constitution.md Portable Core
 
-- [ ] 1.2.1 Criar `go.mod` com versao Go alvo.
-- [ ] 1.2.2 Criar estrutura `cmd/noticli` e `internal/`.
-- [ ] 1.2.3 Criar `README.md` inicial com objetivo do projeto.
-- [ ] 1.2.4 Validar `go test ./...` em projeto vazio/minimo.
+- [x] 1.2.1 Criar `go.mod` com versao Go alvo. <!-- go.mod criado com go 1.26 -->
+- [x] 1.2.2 Criar estrutura `cmd/noticli` e `internal/`. <!-- criado cmd/noticli/main.go e diretorios internal com pacotes reais na tarefa 1.3 -->
+- [x] 1.2.3 Criar `README.md` inicial com objetivo do projeto.
+- [x] 1.2.4 Validar `go test ./...` em projeto vazio/minimo. <!-- go1.26.4: ? github.com/rodrigogml/NotiCLI/cmd/noticli [no test files] -->
 
 ### 1.3 Definir Esqueleto de Pacotes Internos `[A]`
 
 Ref: plan.md Project Structure
 
-- [ ] 1.3.1 Criar pacotes internos para app, notify, config e diagnostics.
-- [ ] 1.3.2 Criar pacotes internos para canais email, telegram e slack.
-- [ ] 1.3.3 Definir interfaces minimas entre core e canais.
-- [ ] 1.3.4 Adicionar testes de compilacao ou smoke para estrutura inicial.
+- [x] 1.3.1 Criar pacotes internos para app, notify, config e diagnostics. <!-- criado internal/app, internal/notify, internal/config e internal/diagnostics -->
+- [x] 1.3.2 Criar pacotes internos para canais email, telegram e slack. <!-- criado internal/channels/email, slack e telegram -->
+- [x] 1.3.3 Definir interfaces minimas entre core e canais. <!-- notify.ChannelSender definido -->
+- [x] 1.3.4 Adicionar testes de compilacao ou smoke para estrutura inicial. <!-- go1.26.4: go test ./... passou; internal/notify ok -->
 
 ---
 

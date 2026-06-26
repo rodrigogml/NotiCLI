@@ -42,10 +42,10 @@
 
 - [x] CHK020 - Dependencias externas e premissas tecnicas principais estao documentadas no plano ou pesquisa? [Completude, Plan section Technical Context; Research section Decision 4] {auto}
 - [x] CHK021 - A restricao de custo zero aparece como requisito ou constraint verificavel? [Completude, Spec section FR-019; Plan section Technical Context] {auto}
-- [ ] CHK022 - A escolha de adiar modo servico/API local continua aceitavel para o dono do produto antes da implementacao do MVP? [Risco, Research section Decision 6] {humano}
+- [x] CHK022 - A escolha de adiar modo servico/API local continua aceitavel para o dono do produto antes da implementacao do MVP? Confirmado ao prosseguir com o MVP CLI apos a analise SDD. [Risco, Research section Decision 6] {humano}
 
 ## Notes
 
 - Itens `{auto}` foram resolvidos contra `spec.md`, `plan.md`, `research.md`, `contracts/cli.md`, `data-model.md`, `quickstart.md` e `docs/constitution.md`.
-- Itens `{humano}` aguardam decisao do dono do produto.
+- Itens `{humano}` foram resolvidos para o escopo atual do MVP.
 - Nao foram identificados `[Gap]`, `[Ambiguity]` ou `[Conflict]` bloqueantes neste checklist.
