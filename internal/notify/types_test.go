@@ -33,10 +33,11 @@ func TestChannelSendersExposeStableNames(t *testing.T) {
 
 func TestRequestValidateRequiresCoreFields(t *testing.T) {
 	request := notify.Request{
-		RecipientID: "ops",
-		Channel:     notify.ChannelEmail,
-		Title:       "Backup failed",
-		Message:     "Nightly backup failed",
+		SenderSystem: "BackupJob",
+		RecipientID:  "ops",
+		Channel:      notify.ChannelEmail,
+		Title:        "Backup failed",
+		Message:      "Nightly backup failed",
 	}
 	if err := request.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v", err)
@@ -57,12 +58,38 @@ func TestRequestValidateRequiresCoreFields(t *testing.T) {
 	}
 }
 
-func TestRequestValidateRejectsUnsupportedChannel(t *testing.T) {
+func TestRequestValidateRequiresSenderSystem(t *testing.T) {
 	request := notify.Request{
 		RecipientID: "ops",
-		Channel:     "sms",
+		Channel:     notify.ChannelEmail,
 		Title:       "Backup failed",
 		Message:     "Nightly backup failed",
+	}
+	if err := request.Validate(); err == nil {
+		t.Fatal("Validate() error = nil, want sender_system error")
+	}
+}
+
+func TestRequestValidateRejectsLongSenderSystem(t *testing.T) {
+	request := notify.Request{
+		SenderSystem: "SystemNameLongerThan20",
+		RecipientID:  "ops",
+		Channel:      notify.ChannelEmail,
+		Title:        "Backup failed",
+		Message:      "Nightly backup failed",
+	}
+	if err := request.Validate(); err == nil {
+		t.Fatal("Validate() error = nil, want sender_system length error")
+	}
+}
+
+func TestRequestValidateRejectsUnsupportedChannel(t *testing.T) {
+	request := notify.Request{
+		SenderSystem: "BackupJob",
+		RecipientID:  "ops",
+		Channel:      "sms",
+		Title:        "Backup failed",
+		Message:      "Nightly backup failed",
 	}
 	if err := request.Validate(); err == nil {
 		t.Fatal("Validate() error = nil, want unsupported channel error")

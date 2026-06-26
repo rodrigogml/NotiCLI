@@ -11,6 +11,7 @@ Contratos de interface externa para a CLI do NotiCLI.
 | Field | Required | Validation | Description |
 |-------|----------|------------|-------------|
 | `--config <path>` | no | Must be readable if provided; empty explicit value is invalid | Configuration file path; when omitted, defaults to `noticli.json` in the executable directory |
+| `--sender-system <text>` | yes | Non-empty, max 20 characters | Calling system identifier used to compose the notification sender context |
 | `--recipient <id>` | yes | Non-empty | Configured recipient identifier |
 | `--channel <name>` | yes | One supported channel | MVP: `email`, `telegram`, `slack` |
 | `--title <text>` | yes | Non-empty | Notification title or subject |
@@ -43,11 +44,11 @@ Default diagnostic output is a single line.
 ### Examples
 
 ```text
-noticli send --config ./noticli.json --recipient ops --channel email --title "Backup failed" --message "Nightly backup failed on server-01"
+noticli send --config ./noticli.json --sender-system BackupJob --recipient ops --channel email --title "Backup failed" --message "Nightly backup failed on server-01"
 ```
 
 ```text
-noticli send --recipient ops --channel slack --title "Deploy complete" --message "Release 2026.06.26 completed" --attach ./release-notes.txt
+noticli send --sender-system DeployBot --recipient ops --channel slack --title "Deploy complete" --message "Release 2026.06.26 completed" --attach ./release-notes.txt
 ```
 
 ## Configuration Contract

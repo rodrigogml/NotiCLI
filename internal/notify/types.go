@@ -13,6 +13,8 @@ const (
 	ChannelEmail    = "email"
 	ChannelSlack    = "slack"
 	ChannelTelegram = "telegram"
+
+	MaxSenderSystemLength = 20
 )
 
 type AttachmentPolicy string
@@ -44,15 +46,22 @@ const (
 )
 
 type Request struct {
-	ConfigPath  string
-	RecipientID string
-	Channel     string
-	Title       string
-	Message     string
-	Attachments []Attachment
+	ConfigPath   string
+	SenderSystem string
+	RecipientID  string
+	Channel      string
+	Title        string
+	Message      string
+	Attachments  []Attachment
 }
 
 func (r Request) Validate() error {
+	if strings.TrimSpace(r.SenderSystem) == "" {
+		return diagnostics.New(diagnostics.CategoryInvalidInput, "sender_system is required")
+	}
+	if len([]rune(strings.TrimSpace(r.SenderSystem))) > MaxSenderSystemLength {
+		return diagnostics.New(diagnostics.CategoryInvalidInput, fmt.Sprintf("sender_system must be at most %d characters", MaxSenderSystemLength))
+	}
 	if strings.TrimSpace(r.RecipientID) == "" {
 		return diagnostics.New(diagnostics.CategoryInvalidInput, "recipient_id is required")
 	}

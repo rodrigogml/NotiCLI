@@ -20,7 +20,7 @@ Documento produzido no Phase 0 do plan. Resolve as decisoes tecnicas abertas ant
 
 ## Decision 3: CLI Shape
 
-**Decision**: Define one primary command flow: `noticli send`, with flags for config file, recipient, channel, title, message content and attachments.
+**Decision**: Define one primary command flow: `noticli send`, with flags for config file, sender system, recipient, channel, title, message content and attachments.
 
 **Rationale**: A single explicit send command keeps the MVP small while leaving room for future commands such as `validate-config`, `channels` or `serve`. The command must be fully non-interactive and script-friendly.
 

@@ -51,7 +51,7 @@ Ref: plan.md Project Structure
 
 Ref: contracts/cli.md Command `noticli send`; spec.md FR-001..FR-003
 
-- [x] 2.1.1 Implementar parsing de `send` com flags obrigatorias e opcionais. <!-- implementado em internal/cli.Parse -->
+- [x] 2.1.1 Implementar parsing de `send` com flags obrigatorias e opcionais. <!-- implementado em internal/cli.Parse; inclui --sender-system obrigatorio -->
 - [x] 2.1.2 Validar ausencia de prompts ou leitura interativa. <!-- binario: exit=2 stdout vazio stderr invalid_input para input invalido -->
 - [x] 2.1.3 Mapear flags para Notification Request. <!-- teste TestParseSendMapsFlagsToNotificationRequest -->
 - [x] 2.1.4 Cobrir parsing e validacao basica com testes. <!-- go1.26.4: internal/cli ok -->
@@ -82,7 +82,7 @@ Ref: constitution.md Secure Configuration and Secret Handling; spec.md FR-010
 
 Ref: data-model.md; spec.md Key Entities
 
-- [x] 3.1.1 Definir Notification Request, Recipient, Channel Configuration, Attachment e Delivery Result. <!-- implementado em internal/notify; inclui Configuration para recipients e channels globais -->
+- [x] 3.1.1 Definir Notification Request, Recipient, Channel Configuration, Attachment e Delivery Result. <!-- implementado em internal/notify; inclui SenderSystem e Configuration para recipients e channels globais -->
 - [x] 3.1.2 Definir validacoes de campos obrigatorios. <!-- Validate em Request, Configuration, Recipient, ChannelConfig e Attachment -->
 - [x] 3.1.3 Definir estados/categorias necessarios para resultados. <!-- DeliveryState, ResultCategory, SuccessResult e FailureResult -->
 - [x] 3.1.4 Testar validacoes do modelo de dominio. <!-- go1.26.4: internal/notify ok -->

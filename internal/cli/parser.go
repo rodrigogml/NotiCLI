@@ -52,6 +52,7 @@ func parseSend(args []string, executablePath string) (notify.Request, error) {
 	flags := flag.NewFlagSet(CommandSend, flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	flags.StringVar(&request.ConfigPath, "config", "", "configuration file path")
+	flags.StringVar(&request.SenderSystem, "sender-system", "", "sending system identifier")
 	flags.StringVar(&request.RecipientID, "recipient", "", "configured recipient identifier")
 	flags.StringVar(&request.Channel, "channel", "", "notification channel")
 	flags.StringVar(&request.Title, "title", "", "notification title")
@@ -73,6 +74,7 @@ func parseSend(args []string, executablePath string) (notify.Request, error) {
 	})
 
 	request.ConfigPath = strings.TrimSpace(request.ConfigPath)
+	request.SenderSystem = strings.TrimSpace(request.SenderSystem)
 	request.RecipientID = strings.TrimSpace(request.RecipientID)
 	request.Channel = strings.TrimSpace(request.Channel)
 	request.Title = strings.TrimSpace(request.Title)
@@ -83,6 +85,12 @@ func parseSend(args []string, executablePath string) (notify.Request, error) {
 	}
 	if request.ConfigPath == "" {
 		request.ConfigPath = DefaultConfigPath(executablePath)
+	}
+	if request.SenderSystem == "" {
+		return notify.Request{}, ParseError{Message: "missing required flag --sender-system"}
+	}
+	if len([]rune(request.SenderSystem)) > notify.MaxSenderSystemLength {
+		return notify.Request{}, ParseError{Message: fmt.Sprintf("--sender-system must be at most %d characters", notify.MaxSenderSystemLength)}
 	}
 	if request.RecipientID == "" {
 		return notify.Request{}, ParseError{Message: "missing required flag --recipient"}

@@ -4,6 +4,7 @@
 
 | Field | Type | Constraints | Notes |
 |-------|------|-------------|-------|
+| sender_system | string | Required, non-empty, max 20 chars | Identifies the calling system to compose notification content |
 | recipient_id | string | Required, non-empty | References a configured recipient |
 | channel | string | Required, supported channel | MVP values: email, telegram, slack |
 | title | string | Required, non-empty | May be rendered differently depending on channel |
@@ -13,6 +14,7 @@
 
 ### Relationships
 
+- Notification Request identifies one sending system through `sender_system`.
 - Notification Request references one Recipient by `recipient_id`.
 - Notification Request selects one Channel Configuration by `channel`.
 - Notification Request may include zero or more Attachment References.

@@ -8,7 +8,7 @@
 
 ### User Story 1 - Send Notification From Another Application (Priority: P1)
 
-An external application invokes NotiCLI with all required notification data and receives a clear success or failure result without any interactive prompt.
+An external application invokes NotiCLI with all required notification data, including the sending system identifier, and receives a clear success or failure result without any interactive prompt.
 
 **Why this priority**: This is the core value of the product. If another application cannot trigger a notification through a single non-interactive execution, the MVP is not useful.
 
@@ -16,7 +16,7 @@ An external application invokes NotiCLI with all required notification data and 
 
 **Acceptance Scenarios**:
 
-1. **Given** a valid configured recipient and a valid configured channel, **When** an external application invokes NotiCLI with recipient, channel, title and message content, **Then** the notification is sent and the command exits with a success result.
+1. **Given** a valid configured recipient and a valid configured channel, **When** an external application invokes NotiCLI with sender system, recipient, channel, title and message content, **Then** the notification is sent and the command exits with a success result.
 2. **Given** a notification request missing required data, **When** NotiCLI is invoked, **Then** no notification is sent and the command exits with a failure result that identifies the invalid input.
 3. **Given** NotiCLI is invoked by a non-interactive process, **When** the notification is processed, **Then** execution completes without prompts, confirmations or waiting for user input.
 
@@ -88,6 +88,7 @@ An operator or calling application can understand why a notification failed from
 ### Edge Cases
 
 - Required command input is missing, empty or duplicated.
+- Sender system is missing, empty or longer than 20 characters.
 - A recipient exists but has no usable address or destination for the selected channel.
 - The selected channel is unknown, disabled or missing credentials.
 - The configuration file is missing, unreadable, malformed or contains unsupported fields.
@@ -103,7 +104,7 @@ An operator or calling application can understand why a notification failed from
 ### Functional Requirements
 
 - **FR-001**: The system MUST provide a non-interactive notification execution mode that never prompts for input during normal or error flows.
-- **FR-002**: The system MUST accept notification input for recipient, channel, title, message content and optional attachments.
+- **FR-002**: The system MUST accept notification input for sender system, recipient, channel, title, message content and optional attachments.
 - **FR-003**: The system MUST validate required notification input before attempting delivery.
 - **FR-004**: The system MUST read recipients and channel settings from a local configuration file.
 - **FR-005**: The system MUST fail without sending a notification when required configuration is missing, malformed or incomplete.
@@ -127,7 +128,7 @@ An operator or calling application can understand why a notification failed from
 
 ### Key Entities
 
-- **Notification Request**: The input provided by a caller for one attempted notification. Key information includes recipient identifier, channel identifier, title, message content and optional attachments.
+- **Notification Request**: The input provided by a caller for one attempted notification. Key information includes sender system, recipient identifier, channel identifier, title, message content and optional attachments.
 - **Recipient**: A configured notification target. Key information includes stable identifier and channel-specific destinations.
 - **Channel Configuration**: Settings required to send through one channel. Key information includes channel type, enabled state, destination settings and secret-bearing credentials.
 - **Attachment**: A file requested by the caller for inclusion in a notification. Key information includes path, readability and channel compatibility.
