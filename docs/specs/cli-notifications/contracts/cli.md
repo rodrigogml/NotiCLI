@@ -13,7 +13,7 @@ Contratos de interface externa para a CLI do NotiCLI.
 | `--config <path>` | no | Must be readable if provided | Configuration file path; uses documented default when omitted |
 | `--recipient <id>` | yes | Non-empty | Configured recipient identifier |
 | `--channel <name>` | yes | One supported channel | MVP: `email`, `telegram`, `slack` |
-| `--title <text>` | yes | Non-empty unless a channel explicitly documents otherwise | Notification title or subject |
+| `--title <text>` | yes | Non-empty | Notification title or subject |
 | `--message <text>` | yes | Non-empty | Notification body |
 | `--attach <path>` | no | File must exist and be readable | May be repeated for multiple attachments |
 

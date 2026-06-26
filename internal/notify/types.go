@@ -9,6 +9,7 @@ const (
 )
 
 type Request struct {
+	ConfigPath  string
 	RecipientID string
 	Channel     string
 	Title       string

@@ -51,10 +51,10 @@ Ref: plan.md Project Structure
 
 Ref: contracts/cli.md Command `noticli send`; spec.md FR-001..FR-003
 
-- [ ] 2.1.1 Implementar parsing de `send` com flags obrigatorias e opcionais.
-- [ ] 2.1.2 Validar ausencia de prompts ou leitura interativa.
-- [ ] 2.1.3 Mapear flags para Notification Request.
-- [ ] 2.1.4 Cobrir parsing e validacao basica com testes.
+- [x] 2.1.1 Implementar parsing de `send` com flags obrigatorias e opcionais. <!-- implementado em internal/cli.Parse -->
+- [x] 2.1.2 Validar ausencia de prompts ou leitura interativa. <!-- binario: exit=2 stdout vazio stderr invalid_input para input invalido -->
+- [x] 2.1.3 Mapear flags para Notification Request. <!-- teste TestParseSendMapsFlagsToNotificationRequest -->
+- [x] 2.1.4 Cobrir parsing e validacao basica com testes. <!-- go1.26.4: internal/cli ok -->
 
 ### 2.2 Implementar Exit Codes e Categorias de Erro `[C]`
 
