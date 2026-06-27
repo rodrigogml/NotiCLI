@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -26,7 +27,8 @@ const (
 )
 
 type ParseError struct {
-	Message string
+	Message  string
+	ShowHelp bool
 }
 
 func (e ParseError) Error() string {
@@ -40,14 +42,14 @@ func Parse(args []string) (notify.Request, error) {
 
 func ParseWithExecutablePath(args []string, executablePath string) (notify.Request, error) {
 	if len(args) == 0 {
-		return notify.Request{}, ParseError{Message: "missing command"}
+		return notify.Request{}, ParseError{Message: "missing command", ShowHelp: true}
 	}
 
 	switch args[0] {
 	case CommandSend:
 		return parseSend(args[1:], executablePath)
 	default:
-		return notify.Request{}, ParseError{Message: fmt.Sprintf("unknown command %q", args[0])}
+		return notify.Request{}, ParseError{Message: fmt.Sprintf("unknown command %q", args[0]), ShowHelp: true}
 	}
 }
 
@@ -66,10 +68,10 @@ func parseSend(args []string, executablePath string) (notify.Request, error) {
 	flags.Var(&attachments, "attach", "attachment path")
 
 	if err := flags.Parse(args); err != nil {
-		return notify.Request{}, ParseError{Message: err.Error()}
+		return notify.Request{}, ParseError{Message: err.Error(), ShowHelp: true}
 	}
 	if flags.NArg() > 0 {
-		return notify.Request{}, ParseError{Message: fmt.Sprintf("unexpected argument %q", flags.Arg(0))}
+		return notify.Request{}, ParseError{Message: fmt.Sprintf("unexpected argument %q", flags.Arg(0)), ShowHelp: true}
 	}
 
 	configProvided := false
@@ -87,37 +89,37 @@ func parseSend(args []string, executablePath string) (notify.Request, error) {
 	request.Message = strings.TrimSpace(request.Message)
 
 	if configProvided && request.ConfigPath == "" {
-		return notify.Request{}, ParseError{Message: "empty --config value"}
+		return notify.Request{}, ParseError{Message: "empty --config value", ShowHelp: true}
 	}
 	if request.ConfigPath == "" {
 		request.ConfigPath = DefaultConfigPath(executablePath)
 	}
 	if request.SenderSystem == "" {
-		return notify.Request{}, ParseError{Message: "missing required flag --sender"}
+		return notify.Request{}, ParseError{Message: "missing required flag --sender", ShowHelp: true}
 	}
 	if len([]rune(request.SenderSystem)) > notify.MaxSenderSystemLength {
-		return notify.Request{}, ParseError{Message: fmt.Sprintf("--sender must be at most %d characters", notify.MaxSenderSystemLength)}
+		return notify.Request{}, ParseError{Message: fmt.Sprintf("--sender must be at most %d characters", notify.MaxSenderSystemLength), ShowHelp: true}
 	}
 	if request.RecipientID == "" {
-		return notify.Request{}, ParseError{Message: "missing required flag --recipient"}
+		return notify.Request{}, ParseError{Message: "missing required flag --recipient", ShowHelp: true}
 	}
 	if request.Channel == "" {
-		return notify.Request{}, ParseError{Message: "missing required flag --channel"}
+		return notify.Request{}, ParseError{Message: "missing required flag --channel", ShowHelp: true}
 	}
 	if !isSupportedChannel(request.Channel) {
-		return notify.Request{}, ParseError{Message: fmt.Sprintf("unsupported channel %q", request.Channel)}
+		return notify.Request{}, ParseError{Message: fmt.Sprintf("unsupported channel %q", request.Channel), ShowHelp: true}
 	}
 	if request.Title == "" {
-		return notify.Request{}, ParseError{Message: "missing required flag --title"}
+		return notify.Request{}, ParseError{Message: "missing required flag --title", ShowHelp: true}
 	}
 	if request.Message == "" {
-		return notify.Request{}, ParseError{Message: "missing required flag --message"}
+		return notify.Request{}, ParseError{Message: "missing required flag --message", ShowHelp: true}
 	}
 
 	for _, path := range attachments {
 		path = strings.TrimSpace(path)
 		if path == "" {
-			return notify.Request{}, ParseError{Message: "empty --attach value"}
+			return notify.Request{}, ParseError{Message: "empty --attach value", ShowHelp: true}
 		}
 		request.Attachments = append(request.Attachments, notify.Attachment{Path: path})
 	}
@@ -143,6 +145,10 @@ func Run(args []string, stdout, stderr io.Writer) int {
 func RunWithSenders(args []string, stdout, stderr io.Writer, senders ...notify.ChannelSender) int {
 	request, err := Parse(args)
 	if err != nil {
+		var parseErr ParseError
+		if errors.As(err, &parseErr) && parseErr.ShowHelp {
+			return writeUsageFailure(stderr, parseErr.Message)
+		}
 		return diagnostics.WriteFailure(stderr, diagnostics.New(diagnostics.CategoryInvalidInput, err.Error()))
 	}
 	configuration, err := config.Load(request.ConfigPath)
@@ -163,4 +169,31 @@ func RunWithSenders(args []string, stdout, stderr io.Writer, senders ...notify.C
 	}
 
 	return result.ExitCode
+}
+
+func writeUsageFailure(w io.Writer, message string) int {
+	fmt.Fprintf(w, "%s: %s\n\n%s", diagnostics.CategoryInvalidInput, strings.TrimSpace(message), Usage())
+	return diagnostics.ExitInvalidInput
+}
+
+func Usage() string {
+	return strings.TrimLeft(`
+Usage:
+  noticli send --sender <system> --recipient <id> --channel <email|telegram|slack> --title <text> --message <text> [--config <path>] [--attach <path>...]
+
+Required flags:
+  --sender     Calling system identifier, up to 20 characters.
+  --recipient  Recipient ID configured in noticli.json.
+  --channel    Delivery channel: email, telegram or slack.
+  --title      Notification title or subject.
+  --message    Notification body.
+
+Optional flags:
+  --config     JSON configuration file. Defaults to noticli.json beside the executable.
+  --attach     Readable file attachment. May be repeated. Supported by email only.
+
+Examples:
+  noticli send --sender BackupJob --recipient ops --channel email --title "Backup failed" --message "Nightly backup failed on server-01"
+  noticli send --config /opt/NotiCLI/config/noticli.json --sender DeployBot --recipient ops --channel slack --title "Deploy complete" --message "Release completed"
+`, "\n")
 }

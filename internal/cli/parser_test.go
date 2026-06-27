@@ -157,6 +157,34 @@ func TestRunIsNonInteractiveAndReturnsInvalidInputForParseErrors(t *testing.T) {
 	if stderr.String() == "" {
 		t.Fatal("stderr is empty, want diagnostic")
 	}
+	if !strings.Contains(stderr.String(), "Usage:") {
+		t.Fatalf("stderr = %q, want usage help", stderr.String())
+	}
+}
+
+func TestRunWithoutArgumentsReturnsUsageHelp(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := cli.Run(nil, &stdout, &stderr)
+	if code != cli.ExitInvalidInput {
+		t.Fatalf("Run() exit code = %d, want %d", code, cli.ExitInvalidInput)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
+	}
+	got := stderr.String()
+	for _, want := range []string{
+		"invalid_input: missing command",
+		"Usage:",
+		"noticli send --sender <system>",
+		"Required flags:",
+		"Examples:",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("stderr = %q, want substring %q", got, want)
+		}
+	}
 }
 
 func TestRunLoadsConfigFromConfigFlag(t *testing.T) {
