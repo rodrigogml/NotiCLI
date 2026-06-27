@@ -91,10 +91,10 @@ Ref: data-model.md; spec.md Key Entities
 
 Ref: research.md Decision 2; contracts/cli.md Configuration Contract; spec.md FR-004..FR-005
 
-- [ ] 3.2.1 Definir estrutura JSON de recipients, channels e defaults.
-- [ ] 3.2.2 Implementar leitura por `--config` e caminho default documentado.
-- [ ] 3.2.3 Tratar arquivo ausente, ilegivel e JSON malformado.
-- [ ] 3.2.4 Testar leitura de configuracao valida e erros de arquivo/formato.
+- [x] 3.2.1 Definir estrutura JSON de recipients, channels e defaults. <!-- implementado em internal/config File structs -->
+- [x] 3.2.2 Implementar leitura por `--config` e caminho default documentado. <!-- config.Load integrado ao cli.Run; parser preserva default no diretorio do executavel -->
+- [x] 3.2.3 Tratar arquivo ausente, ilegivel e JSON malformado. <!-- Load mapeia missing_config e invalid_config -->
+- [x] 3.2.4 Testar leitura de configuracao valida e erros de arquivo/formato. <!-- go1.26.4: internal/config e internal/cli ok -->
 
 ### 3.3 Implementar Validacao de Configuracao `[C]`
 

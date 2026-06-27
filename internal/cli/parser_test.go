@@ -2,6 +2,7 @@ package cli_test
 
 import (
 	"bytes"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -155,4 +156,69 @@ func TestRunIsNonInteractiveAndReturnsInvalidInputForParseErrors(t *testing.T) {
 	if stderr.String() == "" {
 		t.Fatal("stderr is empty, want diagnostic")
 	}
+}
+
+func TestRunLoadsConfigFromConfigFlag(t *testing.T) {
+	configPath := writeConfig(t)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := cli.Run([]string{
+		"send",
+		"--config", configPath,
+		"--sender", "BackupJob",
+		"--recipient", "ops",
+		"--channel", "email",
+		"--title", "Backup failed",
+		"--message", "Nightly backup failed",
+	}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("Run() exit code = %d, want dispatch placeholder code 1", code)
+	}
+	if got := stderr.String(); got != "internal_error: dispatch not implemented\n" {
+		t.Fatalf("stderr = %q", got)
+	}
+}
+
+func TestRunReturnsMissingConfigWhenConfigFileDoesNotExist(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := cli.Run([]string{
+		"send",
+		"--config", filepath.Join(t.TempDir(), "missing.json"),
+		"--sender", "BackupJob",
+		"--recipient", "ops",
+		"--channel", "email",
+		"--title", "Backup failed",
+		"--message", "Nightly backup failed",
+	}, &stdout, &stderr)
+	if code != 3 {
+		t.Fatalf("Run() exit code = %d, want missing_config code 3", code)
+	}
+	if got := stderr.String(); got == "" {
+		t.Fatal("stderr is empty, want diagnostic")
+	}
+}
+
+func writeConfig(t *testing.T) string {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), "noticli.json")
+	content := `{
+		"recipients": {
+			"ops": {"email": "ops@example.com"}
+		},
+		"channels": {
+			"email": {
+				"settings": {"from": "noticli@example.com"},
+				"secrets": {"smtp_password": "secret"},
+				"attachments": "supported"
+			}
+		}
+	}`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	return path
 }

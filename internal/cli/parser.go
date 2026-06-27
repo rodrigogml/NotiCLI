@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/rodrigogml/NotiCLI/internal/config"
 	"github.com/rodrigogml/NotiCLI/internal/diagnostics"
 	"github.com/rodrigogml/NotiCLI/internal/notify"
 )
@@ -131,8 +132,12 @@ func isSupportedChannel(channel string) bool {
 }
 
 func Run(args []string, stdout, stderr io.Writer) int {
-	if _, err := Parse(args); err != nil {
+	request, err := Parse(args)
+	if err != nil {
 		return diagnostics.WriteFailure(stderr, diagnostics.New(diagnostics.CategoryInvalidInput, err.Error()))
+	}
+	if _, err := config.Load(request.ConfigPath); err != nil {
+		return diagnostics.WriteFailure(stderr, err)
 	}
 
 	return diagnostics.WriteFailure(stderr, diagnostics.New(diagnostics.CategoryInternalError, "dispatch not implemented"))
