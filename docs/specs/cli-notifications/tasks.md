@@ -100,10 +100,10 @@ Ref: research.md Decision 2; contracts/cli.md Configuration Contract; spec.md FR
 
 Ref: spec.md FR-005, FR-010; contracts/cli.md Secret Handling Requirements
 
-- [ ] 3.3.1 Validar recipients habilitados e destinos por canal.
-- [ ] 3.3.2 Validar channels habilitados, settings e secrets obrigatorios.
-- [ ] 3.3.3 Marcar campos secretos para redacao em diagnosticos.
-- [ ] 3.3.4 Testar configuracao incompleta sem vazamento de segredos.
+- [x] 3.3.1 Validar recipients habilitados e destinos por canal. <!-- notify.Configuration.Resolve valida recipient enabled e DestinationFor(channel) -->
+- [x] 3.3.2 Validar channels habilitados, settings e secrets obrigatorios. <!-- ChannelConfig.ValidateForDelivery valida enabled, settings/secrets nao vazios e chaves secretas minimas por canal -->
+- [x] 3.3.3 Marcar campos secretos para redacao em diagnosticos. <!-- Configuration.SecretValues coleta secrets e cli.Run usa diagnostics.NewRedactor -->
+- [x] 3.3.4 Testar configuracao incompleta sem vazamento de segredos. <!-- go1.26.4: internal/cli TestRunReturnsInvalidConfigWithoutLeakingSecrets; internal/notify Resolve tests -->
 
 ---
 

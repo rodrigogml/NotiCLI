@@ -136,8 +136,12 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return diagnostics.WriteFailure(stderr, diagnostics.New(diagnostics.CategoryInvalidInput, err.Error()))
 	}
-	if _, err := config.Load(request.ConfigPath); err != nil {
+	configuration, err := config.Load(request.ConfigPath)
+	if err != nil {
 		return diagnostics.WriteFailure(stderr, err)
+	}
+	if _, err := configuration.Resolve(request); err != nil {
+		return diagnostics.WriteFailureWithRedactor(stderr, err, diagnostics.NewRedactor(configuration.SecretValues()...))
 	}
 
 	return diagnostics.WriteFailure(stderr, diagnostics.New(diagnostics.CategoryInternalError, "dispatch not implemented"))

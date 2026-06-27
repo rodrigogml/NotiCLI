@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/rodrigogml/NotiCLI/internal/cli"
@@ -201,6 +202,32 @@ func TestRunReturnsMissingConfigWhenConfigFileDoesNotExist(t *testing.T) {
 	}
 }
 
+func TestRunReturnsInvalidConfigWithoutLeakingSecrets(t *testing.T) {
+	configPath := writeInvalidTelegramConfig(t)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := cli.Run([]string{
+		"send",
+		"--config", configPath,
+		"--sender", "BackupJob",
+		"--recipient", "ops",
+		"--channel", "telegram",
+		"--title", "Backup failed",
+		"--message", "Nightly backup failed",
+	}, &stdout, &stderr)
+	if code != 4 {
+		t.Fatalf("Run() exit code = %d, want invalid_config code 4", code)
+	}
+	got := stderr.String()
+	if strings.Contains(got, "123456:ABCDEFGHIJKLMNOPQRSTUVWXYZ") {
+		t.Fatalf("stderr leaked secret: %q", got)
+	}
+	if !strings.Contains(got, "invalid_config: telegram:") {
+		t.Fatalf("stderr = %q, want telegram invalid_config", got)
+	}
+}
+
 func writeConfig(t *testing.T) string {
 	t.Helper()
 
@@ -214,6 +241,28 @@ func writeConfig(t *testing.T) string {
 				"settings": {"from": "noticli@example.com"},
 				"secrets": {"smtp_password": "secret"},
 				"attachments": "supported"
+			}
+		}
+	}`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	return path
+}
+
+func writeInvalidTelegramConfig(t *testing.T) string {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), "noticli.json")
+	content := `{
+		"recipients": {
+			"ops": {"email": "ops@example.com", "telegram_chat_id": "12345"}
+		},
+		"channels": {
+			"telegram": {
+				"settings": {},
+				"secrets": {"token": "123456:ABCDEFGHIJKLMNOPQRSTUVWXYZ"},
+				"attachments": "limited"
 			}
 		}
 	}`

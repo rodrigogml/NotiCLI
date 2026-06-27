@@ -173,6 +173,82 @@ func TestConfigurationValidateRequiresRecipientsAndChannels(t *testing.T) {
 	}
 }
 
+func TestConfigurationResolveReturnsRecipientChannelAndDestination(t *testing.T) {
+	config := validConfiguration()
+	request := validRequest()
+
+	resolved, err := config.Resolve(request)
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if resolved.Recipient.ID != "ops" {
+		t.Fatalf("Recipient.ID = %q", resolved.Recipient.ID)
+	}
+	if resolved.Channel.Type != notify.ChannelEmail {
+		t.Fatalf("Channel.Type = %q", resolved.Channel.Type)
+	}
+	if resolved.Destination != "ops@example.com" {
+		t.Fatalf("Destination = %q", resolved.Destination)
+	}
+}
+
+func TestConfigurationResolveRejectsUnknownRecipientAndChannel(t *testing.T) {
+	config := validConfiguration()
+
+	request := validRequest()
+	request.RecipientID = "unknown"
+	_, err := config.Resolve(request)
+	assertDiagnosticCategory(t, err, diagnostics.CategoryMissingConfig)
+
+	request = validRequest()
+	request.Channel = notify.ChannelSlack
+	_, err = config.Resolve(request)
+	assertDiagnosticCategory(t, err, diagnostics.CategoryMissingConfig)
+}
+
+func TestConfigurationResolveRejectsDisabledRecipientAndMissingDestination(t *testing.T) {
+	config := validConfiguration()
+	config.Recipients["ops"] = notify.Recipient{
+		ID:      "ops",
+		Email:   "ops@example.com",
+		Enabled: false,
+	}
+	_, err := config.Resolve(validRequest())
+	assertDiagnosticCategory(t, err, diagnostics.CategoryInvalidConfig)
+
+	config = validConfiguration()
+	config.Recipients["ops"] = notify.Recipient{
+		ID:      "ops",
+		Enabled: true,
+	}
+	_, err = config.Resolve(validRequest())
+	assertDiagnosticCategory(t, err, diagnostics.CategoryInvalidConfig)
+}
+
+func TestConfigurationResolveRejectsDisabledChannelAndMissingRequiredSecret(t *testing.T) {
+	config := validConfiguration()
+	channel := config.Channels[notify.ChannelEmail]
+	channel.Enabled = false
+	config.Channels[notify.ChannelEmail] = channel
+	_, err := config.Resolve(validRequest())
+	assertDiagnosticCategory(t, err, diagnostics.CategoryInvalidConfig)
+
+	config = validConfiguration()
+	channel = config.Channels[notify.ChannelEmail]
+	channel.Secrets = map[string]string{"api_key": "secret"}
+	config.Channels[notify.ChannelEmail] = channel
+	_, err = config.Resolve(validRequest())
+	assertDiagnosticCategory(t, err, diagnostics.CategoryInvalidConfig)
+}
+
+func TestConfigurationSecretValuesCollectsChannelSecretValues(t *testing.T) {
+	config := validConfiguration()
+	secrets := config.SecretValues()
+	if len(secrets) != 1 || secrets[0] != "secret" {
+		t.Fatalf("SecretValues() = %#v", secrets)
+	}
+}
+
 func TestChannelConfigValidateRequiresSupportedTypeAndMaps(t *testing.T) {
 	config := notify.ChannelConfig{
 		Type:             notify.ChannelSlack,
@@ -217,5 +293,51 @@ func TestDeliveryResultConstructorsSetStateAndExitCode(t *testing.T) {
 	}
 	if !failure.Redacted {
 		t.Fatal("failure.Redacted = false, want true")
+	}
+}
+
+func validRequest() notify.Request {
+	return notify.Request{
+		SenderSystem: "BackupJob",
+		RecipientID:  "ops",
+		Channel:      notify.ChannelEmail,
+		Title:        "Backup failed",
+		Message:      "Nightly backup failed",
+	}
+}
+
+func validConfiguration() notify.Configuration {
+	return notify.Configuration{
+		Recipients: map[string]notify.Recipient{
+			"ops": {
+				ID:      "ops",
+				Email:   "ops@example.com",
+				Enabled: true,
+			},
+		},
+		Channels: map[string]notify.ChannelConfig{
+			notify.ChannelEmail: {
+				Type:             notify.ChannelEmail,
+				Enabled:          true,
+				Settings:         map[string]string{"from": "noticli@example.com"},
+				Secrets:          map[string]string{"smtp_password": "secret"},
+				AttachmentPolicy: notify.AttachmentPolicySupported,
+			},
+		},
+	}
+}
+
+func assertDiagnosticCategory(t *testing.T, err error, want diagnostics.Category) {
+	t.Helper()
+
+	if err == nil {
+		t.Fatalf("error = nil, want %q", want)
+	}
+	var diagnostic diagnostics.Diagnostic
+	if !errors.As(err, &diagnostic) {
+		t.Fatalf("error type = %T, want diagnostics.Diagnostic", err)
+	}
+	if diagnostic.Category != want {
+		t.Fatalf("Category = %q, want %q", diagnostic.Category, want)
 	}
 }

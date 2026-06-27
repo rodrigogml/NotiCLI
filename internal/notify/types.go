@@ -88,6 +88,13 @@ type Configuration struct {
 	Defaults   map[string]string
 }
 
+type ResolvedRequest struct {
+	Request     Request
+	Recipient   Recipient
+	Channel     ChannelConfig
+	Destination string
+}
+
 func (c Configuration) Validate() error {
 	if len(c.Recipients) == 0 {
 		return diagnostics.New(diagnostics.CategoryInvalidConfig, "at least one recipient is required")
@@ -112,6 +119,44 @@ func (c Configuration) Validate() error {
 		}
 	}
 	return nil
+}
+
+func (c Configuration) Resolve(request Request) (ResolvedRequest, error) {
+	if err := request.Validate(); err != nil {
+		return ResolvedRequest{}, err
+	}
+
+	recipient, ok := c.Recipients[request.RecipientID]
+	if !ok {
+		return ResolvedRequest{}, diagnostics.New(diagnostics.CategoryMissingConfig, fmt.Sprintf("recipient %q is not configured", request.RecipientID))
+	}
+
+	channel, ok := c.Channels[request.Channel]
+	if !ok {
+		return ResolvedRequest{}, diagnostics.New(diagnostics.CategoryMissingConfig, fmt.Sprintf("channel %q is not configured", request.Channel))
+	}
+	if err := recipient.ValidateForChannel(request.Channel); err != nil {
+		return ResolvedRequest{}, err
+	}
+	if err := channel.ValidateForDelivery(request.Channel); err != nil {
+		return ResolvedRequest{}, err
+	}
+
+	destination, _ := recipient.DestinationFor(request.Channel)
+	return ResolvedRequest{
+		Request:     request,
+		Recipient:   recipient,
+		Channel:     channel,
+		Destination: destination,
+	}, nil
+}
+
+func (c Configuration) SecretValues() []string {
+	var secrets []string
+	for _, channel := range c.Channels {
+		secrets = append(secrets, channel.SecretValues()...)
+	}
+	return secrets
 }
 
 type Attachment struct {
@@ -151,6 +196,19 @@ func (r Recipient) Validate() error {
 	return nil
 }
 
+func (r Recipient) ValidateForChannel(channel string) error {
+	if err := r.Validate(); err != nil {
+		return err
+	}
+	if !r.Enabled {
+		return diagnostics.New(diagnostics.CategoryInvalidConfig, fmt.Sprintf("recipient %q is disabled", r.ID))
+	}
+	if _, ok := r.DestinationFor(channel); !ok {
+		return diagnostics.ForChannel(diagnostics.CategoryInvalidConfig, channel, fmt.Sprintf("recipient %q has no configured destination", r.ID))
+	}
+	return nil
+}
+
 func (r Recipient) DestinationFor(channel string) (string, bool) {
 	switch channel {
 	case ChannelEmail:
@@ -186,6 +244,40 @@ func (c ChannelConfig) Validate() error {
 		return diagnostics.ForChannel(diagnostics.CategoryInvalidConfig, c.Type, fmt.Sprintf("unsupported attachment policy %q", c.AttachmentPolicy))
 	}
 	return nil
+}
+
+func (c ChannelConfig) ValidateForDelivery(selectedChannel string) error {
+	if err := c.Validate(); err != nil {
+		return err
+	}
+	if c.Type != selectedChannel {
+		return diagnostics.ForChannel(diagnostics.CategoryInvalidConfig, selectedChannel, fmt.Sprintf("channel config type %q does not match selected channel", c.Type))
+	}
+	if !c.Enabled {
+		return diagnostics.ForChannel(diagnostics.CategoryInvalidConfig, selectedChannel, "channel is disabled")
+	}
+	if len(c.Settings) == 0 {
+		return diagnostics.ForChannel(diagnostics.CategoryInvalidConfig, selectedChannel, "settings must not be empty")
+	}
+	if len(c.Secrets) == 0 {
+		return diagnostics.ForChannel(diagnostics.CategoryInvalidConfig, selectedChannel, "secrets must not be empty")
+	}
+	for _, key := range RequiredSecretKeys(selectedChannel) {
+		if strings.TrimSpace(c.Secrets[key]) == "" {
+			return diagnostics.ForChannel(diagnostics.CategoryInvalidConfig, selectedChannel, fmt.Sprintf("required secret %q is missing", key))
+		}
+	}
+	return nil
+}
+
+func (c ChannelConfig) SecretValues() []string {
+	secrets := make([]string, 0, len(c.Secrets))
+	for _, value := range c.Secrets {
+		if strings.TrimSpace(value) != "" {
+			secrets = append(secrets, value)
+		}
+	}
+	return secrets
 }
 
 type Result struct {
@@ -241,5 +333,18 @@ func IsValidAttachmentPolicy(policy AttachmentPolicy) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func RequiredSecretKeys(channel string) []string {
+	switch channel {
+	case ChannelEmail:
+		return []string{"smtp_password"}
+	case ChannelTelegram:
+		return []string{"token"}
+	case ChannelSlack:
+		return []string{"webhook_url"}
+	default:
+		return nil
 	}
 }

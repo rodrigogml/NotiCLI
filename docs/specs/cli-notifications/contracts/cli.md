@@ -80,9 +80,17 @@ noticli send --sender DeployBot --recipient ops --channel slack --title "Deploy 
 |-------|----------|-------------|
 | `type` | yes | `email`, `telegram` or `slack` |
 | `enabled` | no | Defaults to true |
-| `settings` | yes | Non-secret settings required by the channel |
-| `secrets` | yes | Secret-bearing values required by the channel |
+| `settings` | yes | Non-empty map of non-secret settings required by the channel |
+| `secrets` | yes | Non-empty map of secret-bearing values required by the channel |
 | `attachments` | yes | Channel attachment policy |
+
+### MVP Required Secret Keys
+
+| Channel | Required secret keys |
+|---------|----------------------|
+| `email` | `smtp_password` |
+| `telegram` | `token` |
+| `slack` | `webhook_url` |
 
 ### Secret Handling Requirements
 
