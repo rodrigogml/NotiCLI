@@ -89,6 +89,37 @@ func TestWriteFailureRedactsSensitiveValues(t *testing.T) {
 	}
 }
 
+func TestRedactorRedactsConfiguredSecretValuesAndKnownProviderPatterns(t *testing.T) {
+	redactor := diagnostics.NewRedactor(
+		"SMTP_PASSWORD_PLACEHOLDER",
+		"123456:ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+		"https://hooks.slack.com/services/T000/B000/secret",
+	)
+	message := `delivery failed:
+		password=SMTP_PASSWORD_PLACEHOLDER
+		authorization: Bearer abc.def-ghi
+		token=123456:ABCDEFGHIJKLMNOPQRSTUVWXYZ
+		webhook_url=https://hooks.slack.com/services/T000/B000/secret`
+
+	got := redactor.Redact(message)
+	if strings.Contains(got, "\n") || strings.Contains(got, "\t") {
+		t.Fatalf("redacted message is not single-line: %q", got)
+	}
+	for _, leaked := range []string{
+		"SMTP_PASSWORD_PLACEHOLDER",
+		"123456:ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+		"https://hooks.slack.com/services/T000/B000/secret",
+		"abc.def-ghi",
+	} {
+		if strings.Contains(got, leaked) {
+			t.Fatalf("redacted message leaked %q in %q", leaked, got)
+		}
+	}
+	if strings.Count(got, diagnostics.Redacted) < 4 {
+		t.Fatalf("redacted message = %q, want multiple redactions", got)
+	}
+}
+
 func TestWriteFailureIncludesChannelForChannelSpecificDiagnostics(t *testing.T) {
 	var stderr bytes.Buffer
 

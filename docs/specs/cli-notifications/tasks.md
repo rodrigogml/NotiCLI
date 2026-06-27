@@ -113,37 +113,37 @@ Ref: spec.md FR-005, FR-010; contracts/cli.md Secret Handling Requirements
 
 Ref: plan.md Structure Decision; spec.md FR-017, FR-020
 
-- [ ] 4.1.1 Criar fluxo de validacao antes de dispatch.
-- [ ] 4.1.2 Resolver recipient e channel a partir da configuracao.
-- [ ] 4.1.3 Invocar adaptador de canal por interface.
-- [ ] 4.1.4 Testar fluxo com adaptador fake para sucesso e falha.
+- [x] 4.1.1 Criar fluxo de validacao antes de dispatch. <!-- App.Notify usa Configuration.Resolve antes do sender; go1.26.0: internal/app ok -->
+- [x] 4.1.2 Resolver recipient e channel a partir da configuracao. <!-- App.Notify passa resolved.Recipient e resolved.Channel ao sender fake nos testes -->
+- [x] 4.1.3 Invocar adaptador de canal por interface. <!-- App registra notify.ChannelSender por Name e CLI injeta email/telegram/slack -->
+- [x] 4.1.4 Testar fluxo com adaptador fake para sucesso e falha. <!-- go1.26.0: TestNotifyValidatesAndDispatchesResolvedRequest, TestNotifyReturnsSenderFailure -->
 
 ### 4.2 Implementar Canal Email `[A]`
 
 Ref: spec.md User Story 3; contracts/cli.md Channel Fields
 
-- [ ] 4.2.1 Implementar validacao de settings e secrets do email.
-- [ ] 4.2.2 Implementar envio de titulo, conteudo e destinatario por email.
-- [ ] 4.2.3 Mapear falhas do provedor para delivery_failure.
-- [ ] 4.2.4 Testar email com transporte fake ou servidor de teste local.
+- [x] 4.2.1 Implementar validacao de settings e secrets do email. <!-- email.Sender valida settings host/port/from e secret smtp_password; go1.26.0: internal/channels/email ok -->
+- [x] 4.2.2 Implementar envio de titulo, conteudo e destinatario por email. <!-- SMTPTransport envia assunto/corpo para recipient.Email com From configurado -->
+- [x] 4.2.3 Mapear falhas do provedor para delivery_failure. <!-- TestSendMapsTransportFailureToDeliveryFailure -->
+- [x] 4.2.4 Testar email com transporte fake ou servidor de teste local. <!-- go1.26.0: TestSendBuildsMessageAndUsesTransport -->
 
 ### 4.3 Implementar Canal Telegram `[A]`
 
 Ref: spec.md User Story 3; contracts/cli.md Channel Fields
 
-- [ ] 4.3.1 Implementar validacao de token e destino Telegram.
-- [ ] 4.3.2 Implementar envio de mensagem ao destino configurado.
-- [ ] 4.3.3 Mapear rejeicoes/timeouts para delivery_failure.
-- [ ] 4.3.4 Testar Telegram com cliente HTTP fake.
+- [x] 4.3.1 Implementar validacao de token e destino Telegram. <!-- telegram.Sender valida secret token e recipient.TelegramChatID; go1.26.0: internal/channels/telegram ok -->
+- [x] 4.3.2 Implementar envio de mensagem ao destino configurado. <!-- sendMessage POSTa chat_id/text em /bot{token}/sendMessage -->
+- [x] 4.3.3 Mapear rejeicoes/timeouts para delivery_failure. <!-- TestSendMapsProviderHTTPFailureToDeliveryFailureWithoutLeakingToken e TestSendMapsClientFailureToDeliveryFailureWithoutLeakingToken -->
+- [x] 4.3.4 Testar Telegram com cliente HTTP fake. <!-- go1.26.0: TestSendPostsMessageToTelegramAPI -->
 
 ### 4.4 Implementar Canal Slack `[A]`
 
 Ref: spec.md User Story 3; contracts/cli.md Channel Fields
 
-- [ ] 4.4.1 Implementar validacao de credenciais/destino Slack.
-- [ ] 4.4.2 Implementar envio de mensagem ao destino configurado.
-- [ ] 4.4.3 Mapear rejeicoes/timeouts para delivery_failure.
-- [ ] 4.4.4 Testar Slack com cliente HTTP fake.
+- [x] 4.4.1 Implementar validacao de credenciais/destino Slack. <!-- slack.Sender valida secret webhook_url e recipient.SlackDest; go1.26.0: internal/channels/slack ok -->
+- [x] 4.4.2 Implementar envio de mensagem ao destino configurado. <!-- sendWebhook POSTa JSON com text/channel no webhook configurado -->
+- [x] 4.4.3 Mapear rejeicoes/timeouts para delivery_failure. <!-- TestSendMapsProviderHTTPFailureToDeliveryFailureWithoutLeakingWebhook e TestSendMapsClientFailureToDeliveryFailureWithoutLeakingWebhook -->
+- [x] 4.4.4 Testar Slack com cliente HTTP fake. <!-- go1.26.0: TestSendPostsMessageToSlackWebhook -->
 
 ---
 
@@ -153,37 +153,37 @@ Ref: spec.md User Story 3; contracts/cli.md Channel Fields
 
 Ref: spec.md User Story 4; spec.md FR-013..FR-014
 
-- [ ] 5.1.1 Aceitar multiplos `--attach`.
-- [ ] 5.1.2 Validar existencia, leitura e tipo arquivo antes de dispatch.
-- [ ] 5.1.3 Aplicar politica de suporte por canal.
-- [ ] 5.1.4 Testar arquivo ausente, diretorio, arquivo ilegivel e multiplos anexos.
+- [x] 5.1.1 Aceitar multiplos `--attach`. <!-- parser ja acumulava attachmentFlags; validado em TestParseSendMapsFlagsToNotificationRequest -->
+- [x] 5.1.2 Validar existencia, leitura e tipo arquivo antes de dispatch. <!-- App.Notify chama notify.ValidateAttachments antes do sender; go1.26.0: internal/app e internal/notify ok -->
+- [x] 5.1.3 Aplicar politica de suporte por canal. <!-- ValidateAttachments retorna attachment_error quando AttachmentPolicyUnsupported recebe anexos -->
+- [x] 5.1.4 Testar arquivo ausente, diretorio, arquivo ilegivel e multiplos anexos. <!-- TestValidateAttachmentsRejectsMissingFileAndDirectory, TestValidateAttachmentsRejectsUnreadableFile, TestValidateAttachmentsEnrichesMultipleReadableFiles -->
 
 ### 5.2 Implementar Comportamento de Anexos por Canal `[M]`
 
 Ref: contracts/cli.md Arguments; quickstart.md Scenario 7
 
-- [ ] 5.2.1 Documentar suporte inicial de anexos por email, Telegram e Slack.
-- [ ] 5.2.2 Implementar envio de anexos nos canais suportados.
-- [ ] 5.2.3 Retornar attachment_error para anexos nao suportados.
-- [ ] 5.2.4 Testar sucesso e falha de anexos por canal.
+- [x] 5.2.1 Documentar suporte inicial de anexos por email, Telegram e Slack. <!-- contracts/cli.md Attachment Behavior documenta email suportado e telegram/slack attachment_error -->
+- [x] 5.2.2 Implementar envio de anexos nos canais suportados. <!-- email.SMTPTransport monta multipart/mixed com anexos base64 -->
+- [x] 5.2.3 Retornar attachment_error para anexos nao suportados. <!-- Telegram e Slack retornam attachment_error quando request.Attachments nao vazio -->
+- [x] 5.2.4 Testar sucesso e falha de anexos por canal. <!-- TestSendIncludesAttachmentsInTransportMessage, TestFormatSMTPMessageIncludesAttachmentPart, TestSendReturnsAttachmentErrorWhenAttachmentsAreRequested -->
 
 ### 5.3 Garantir Portabilidade Linux/Windows `[M]`
 
 Ref: constitution.md Portable Core; spec.md FR-018
 
-- [ ] 5.3.1 Usar manipulacao de paths compativel com SO.
-- [ ] 5.3.2 Evitar separadores ou paths hardcoded.
-- [ ] 5.3.3 Adicionar testes para paths relativos e absolutos.
-- [ ] 5.3.4 Documentar expectativa de build portable para Windows.
+- [x] 5.3.1 Usar manipulacao de paths compativel com SO. <!-- config/defaults e attachments usam filepath/os APIs; go1.26.0: go test ./... -->
+- [x] 5.3.2 Evitar separadores ou paths hardcoded. <!-- testes ajustados para filepath.Join em paths simulados -->
+- [x] 5.3.3 Adicionar testes para paths relativos e absolutos. <!-- TestValidateAttachmentsAcceptsRelativeAndAbsolutePaths -->
+- [x] 5.3.4 Documentar expectativa de build portable para Windows. <!-- README Portable Builds; GOOS=windows GOARCH=amd64 go build passou -->
 
 ### 5.4 Escrever Documentacao de Uso e Configuracao `[A]`
 
 Ref: spec.md FR-015..FR-016; quickstart.md
 
-- [ ] 5.4.1 Documentar comandos de envio e flags.
-- [ ] 5.4.2 Documentar exemplo JSON sem segredos reais.
-- [ ] 5.4.3 Documentar exit codes e categorias de erro.
-- [ ] 5.4.4 Documentar setup de email, Telegram e Slack.
+- [x] 5.4.1 Documentar comandos de envio e flags. <!-- README Usage e Flags -->
+- [x] 5.4.2 Documentar exemplo JSON sem segredos reais. <!-- README Configuration usa example.invalid e placeholders -->
+- [x] 5.4.3 Documentar exit codes e categorias de erro. <!-- README Exit Codes -->
+- [x] 5.4.4 Documentar setup de email, Telegram e Slack. <!-- README Channel Setup; quickstart referencia README -->
 
 ---
 
@@ -193,37 +193,37 @@ Ref: spec.md FR-015..FR-016; quickstart.md
 
 Ref: quickstart.md; spec.md Success Criteria
 
-- [ ] 6.1.1 Testar happy path por canal com doubles/fakes.
-- [ ] 6.1.2 Testar input invalido e configuracao ausente/invalida.
-- [ ] 6.1.3 Testar falha de anexo e falha de entrega.
-- [ ] 6.1.4 Testar que cada cenario retorna exit code esperado.
+- [x] 6.1.1 Testar happy path por canal com doubles/fakes. <!-- TestRunWithSendersHappyPathByChannel -->
+- [x] 6.1.2 Testar input invalido e configuracao ausente/invalida. <!-- TestRunWithSendersReturnsExpectedExitCodesForFailureScenarios -->
+- [x] 6.1.3 Testar falha de anexo e falha de entrega. <!-- TestRunWithSendersReturnsExpectedExitCodesForFailureScenarios cobre attachment_error e delivery_failure -->
+- [x] 6.1.4 Testar que cada cenario retorna exit code esperado. <!-- go1.26.0: internal/cli ok; go test ./... passou -->
 
 ### 6.2 Validar Seguranca e Observabilidade `[C]`
 
 Ref: spec.md SC-004; constitution.md Secure Configuration and Secret Handling
 
-- [ ] 6.2.1 Criar testes de redacao para segredos em erros simulados.
-- [ ] 6.2.2 Validar diagnosticos de canal sem expor credenciais.
-- [ ] 6.2.3 Revisar logs/saida padrao para evitar conteudo sensivel.
-- [ ] 6.2.4 Registrar limites de diagnostico seguro no README.
+- [x] 6.2.1 Criar testes de redacao para segredos em erros simulados. <!-- TestRedactorRedactsConfiguredSecretValuesAndKnownProviderPatterns -->
+- [x] 6.2.2 Validar diagnosticos de canal sem expor credenciais. <!-- TestRunWithSendersRedactsConfiguredSecretsFromChannelDiagnostics -->
+- [x] 6.2.3 Revisar logs/saida padrao para evitar conteudo sensivel. <!-- falhas validam stdout vazio e stderr redigido nos testes de CLI -->
+- [x] 6.2.4 Registrar limites de diagnostico seguro no README. <!-- README Safe Diagnostics -->
 
 ### 6.3 Validar Performance Basica e Build `[M]`
 
 Ref: spec.md SC-007; plan.md Technical Context
 
-- [ ] 6.3.1 Medir validacao local sem provedor externo abaixo de 1 segundo.
-- [ ] 6.3.2 Executar `go test ./...`.
-- [ ] 6.3.3 Gerar build local do binario.
-- [ ] 6.3.4 Verificar execucao sem argumentos com falha controlada e nao interativa.
+- [x] 6.3.1 Medir validacao local sem provedor externo abaixo de 1 segundo. <!-- /tmp/noticli-6.3 send sem config: code=3 elapsed_ms=3 stdout vazio -->
+- [x] 6.3.2 Executar `go test ./...`. <!-- go1.26.0: go test ./... passou -->
+- [x] 6.3.3 Gerar build local do binario. <!-- go1.26.0: go build -o /tmp/noticli-6.3 ./cmd/noticli passou; go build ./... passou -->
+- [x] 6.3.4 Verificar execucao sem argumentos com falha controlada e nao interativa. <!-- /tmp/noticli-6.3: code=2 stdout vazio stderr invalid_input: missing command -->
 
 ### 6.4 Revisar Conformidade SDD `[M]`
 
 Ref: docs/specs/cli-notifications/*
 
-- [ ] 6.4.1 Confirmar que tarefas implementadas cobrem FR-001 a FR-020.
-- [ ] 6.4.2 Confirmar que quickstart reflete comportamento implementado.
-- [ ] 6.4.3 Atualizar contratos se a implementacao exigir ajuste aprovado.
-- [ ] 6.4.4 Marcar tarefas concluidas com evidencia curta conforme execucao.
+- [x] 6.4.1 Confirmar que tarefas implementadas cobrem FR-001 a FR-020. <!-- rg FR + revisao Fases 2-6: CLI/config/canais/anexos/docs/testes cobrem FR-001..FR-020 -->
+- [x] 6.4.2 Confirmar que quickstart reflete comportamento implementado. <!-- quickstart cenarios 1-9 conferidos contra RunWithSenders, ValidateAttachments e README -->
+- [x] 6.4.3 Atualizar contratos se a implementacao exigir ajuste aprovado. <!-- contracts/cli.md e data-model.md alinhados: id/type inferidos por chave e attachments default unsupported -->
+- [x] 6.4.4 Marcar tarefas concluidas com evidencia curta conforme execucao. <!-- tarefas 6.4 marcadas apos revisao SDD -->
 
 ---
 

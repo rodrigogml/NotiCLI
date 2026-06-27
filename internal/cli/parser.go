@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -8,6 +9,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/rodrigogml/NotiCLI/internal/app"
+	"github.com/rodrigogml/NotiCLI/internal/channels/email"
+	"github.com/rodrigogml/NotiCLI/internal/channels/slack"
+	"github.com/rodrigogml/NotiCLI/internal/channels/telegram"
 	"github.com/rodrigogml/NotiCLI/internal/config"
 	"github.com/rodrigogml/NotiCLI/internal/diagnostics"
 	"github.com/rodrigogml/NotiCLI/internal/notify"
@@ -132,6 +137,10 @@ func isSupportedChannel(channel string) bool {
 }
 
 func Run(args []string, stdout, stderr io.Writer) int {
+	return RunWithSenders(args, stdout, stderr, email.Sender{}, telegram.Sender{}, slack.Sender{})
+}
+
+func RunWithSenders(args []string, stdout, stderr io.Writer, senders ...notify.ChannelSender) int {
 	request, err := Parse(args)
 	if err != nil {
 		return diagnostics.WriteFailure(stderr, diagnostics.New(diagnostics.CategoryInvalidInput, err.Error()))
@@ -140,9 +149,18 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return diagnostics.WriteFailure(stderr, err)
 	}
-	if _, err := configuration.Resolve(request); err != nil {
-		return diagnostics.WriteFailureWithRedactor(stderr, err, diagnostics.NewRedactor(configuration.SecretValues()...))
+
+	result, err := app.New(configuration, senders...).Notify(context.Background(), request)
+	redactor := diagnostics.NewRedactor(configuration.SecretValues()...)
+	if err != nil {
+		return diagnostics.WriteFailureWithRedactor(stderr, err, redactor)
+	}
+	if !result.Success {
+		return diagnostics.WriteFailureWithRedactor(stderr, diagnostics.ForChannel(result.Category, result.Channel, result.Message), redactor)
+	}
+	if strings.TrimSpace(result.Message) != "" {
+		fmt.Fprintln(stdout, strings.TrimSpace(result.Message))
 	}
 
-	return diagnostics.WriteFailure(stderr, diagnostics.New(diagnostics.CategoryInternalError, "dispatch not implemented"))
+	return result.ExitCode
 }

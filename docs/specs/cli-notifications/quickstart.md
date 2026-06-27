@@ -1,6 +1,6 @@
 # Quickstart: CLI Notifications
 
-Cenarios de teste que validam a implementacao end-to-end. Os exemplos usam nomes ilustrativos; valores reais devem vir de configuracoes locais do operador.
+Cenarios de teste que validam a implementacao end-to-end. Os exemplos usam nomes ilustrativos; valores reais devem vir de configuracoes locais do operador. O formato de `noticli.json`, os campos obrigatorios por canal e os exit codes estao documentados no [README](../../../README.md).
 
 ## Scenario 1: Send Email Notification
 
@@ -40,6 +40,19 @@ Cenarios de teste que validam a implementacao end-to-end. Os exemplos usam nomes
 
 1. Run `noticli send --config ./noticli.json --sender TestRunner --recipient ops --channel email --title "Test" --message "Attachment test" --attach ./missing-file.txt`.
 2. **Expected**: Command exits with code `5`; diagnostic category is `attachment_error`; no delivery is attempted.
+
+## Scenario 7A: Email Attachment Success
+
+1. Create a readable local file such as `./report.txt`.
+2. Configure the email channel with `"attachments": "supported"`.
+3. Run `noticli send --config ./noticli.json --sender TestRunner --recipient ops --channel email --title "Test" --message "Attachment test" --attach ./report.txt`.
+4. **Expected**: Command exits with code `0`; recipient receives the email with the attachment; no prompt appears.
+
+## Scenario 7B: Unsupported Channel Attachment
+
+1. Configure Slack or Telegram with `"attachments": "unsupported"`.
+2. Run `noticli send --config ./noticli.json --sender TestRunner --recipient ops --channel slack --title "Test" --message "Attachment test" --attach ./report.txt`.
+3. **Expected**: Command exits with code `5`; diagnostic category is `attachment_error`; no provider delivery is attempted.
 
 ## Scenario 8: Channel Delivery Failure
 

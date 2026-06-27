@@ -32,7 +32,7 @@ received -> validated -> dispatching -> failed
 
 | Field | Type | Constraints | Notes |
 |-------|------|-------------|-------|
-| id | string | Required, unique | Stable identifier used by callers |
+| id | string | Optional in JSON, unique after load | Stable identifier used by callers; defaults to the recipient map key |
 | name | string | Optional | Human-readable label |
 | email | string | Required when recipient uses email | Destination for email channel |
 | telegram_chat_id | string | Required when recipient uses Telegram | Destination conversation |
@@ -55,11 +55,11 @@ disabled -> enabled
 
 | Field | Type | Constraints | Notes |
 |-------|------|-------------|-------|
-| type | string | Required, supported channel | email, telegram or slack |
+| type | string | Optional in JSON, supported channel after load | email, telegram or slack; defaults to the channel map key |
 | enabled | boolean | Optional, default true | Disabled channels reject delivery |
 | secrets | map | Required per channel | Tokens, passwords, webhook URLs or equivalent credentials |
 | settings | map | Required per channel | Non-secret channel settings |
-| attachment_policy | enum | Required per channel | supported, limited or unsupported |
+| attachment_policy | enum | Optional in JSON, required after load | supported, limited or unsupported; defaults to unsupported |
 
 ### Relationships
 

@@ -3,6 +3,10 @@ package notify
 import (
 	"context"
 	"fmt"
+	"io"
+	"mime"
+	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -178,6 +182,67 @@ func (a Attachment) EffectiveFilename() string {
 		return a.Filename
 	}
 	return filepath.Base(a.Path)
+}
+
+func ValidateAttachments(request Request, channel ChannelConfig) ([]Attachment, error) {
+	if len(request.Attachments) == 0 {
+		return nil, nil
+	}
+	if channel.AttachmentPolicy == AttachmentPolicyUnsupported {
+		return nil, diagnostics.ForChannel(diagnostics.CategoryAttachmentError, request.Channel, "attachments are not supported for channel")
+	}
+
+	attachments := make([]Attachment, 0, len(request.Attachments))
+	for _, attachment := range request.Attachments {
+		validated, err := validateAttachment(attachment)
+		if err != nil {
+			return nil, err
+		}
+		attachments = append(attachments, validated)
+	}
+	return attachments, nil
+}
+
+func validateAttachment(attachment Attachment) (Attachment, error) {
+	if err := attachment.Validate(); err != nil {
+		return Attachment{}, err
+	}
+
+	path := strings.TrimSpace(attachment.Path)
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return Attachment{}, diagnostics.New(diagnostics.CategoryAttachmentError, fmt.Sprintf("attachment not found: %s", path))
+		}
+		return Attachment{}, diagnostics.New(diagnostics.CategoryAttachmentError, fmt.Sprintf("attachment cannot be read: %s", path))
+	}
+	if info.IsDir() {
+		return Attachment{}, diagnostics.New(diagnostics.CategoryAttachmentError, fmt.Sprintf("attachment is a directory: %s", path))
+	}
+
+	file, err := os.Open(path)
+	if err != nil {
+		return Attachment{}, diagnostics.New(diagnostics.CategoryAttachmentError, fmt.Sprintf("attachment cannot be read: %s", path))
+	}
+	defer file.Close()
+
+	contentType := strings.TrimSpace(attachment.ContentType)
+	if contentType == "" {
+		contentType = mime.TypeByExtension(filepath.Ext(path))
+	}
+	if contentType == "" {
+		buffer := make([]byte, 512)
+		n, _ := io.ReadFull(file, buffer)
+		contentType = http.DetectContentType(buffer[:n])
+	}
+
+	attachment.Path = path
+	attachment.Size = info.Size()
+	attachment.ContentType = contentType
+	if strings.TrimSpace(attachment.Filename) == "" {
+		attachment.Filename = filepath.Base(path)
+	}
+	return attachment, nil
 }
 
 type Recipient struct {

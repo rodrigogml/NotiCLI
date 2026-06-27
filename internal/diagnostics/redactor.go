@@ -8,6 +8,7 @@ import (
 const Redacted = "[REDACTED]"
 
 var sensitivePatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)(authorization\s*[:=]\s*bearer\s+)([A-Za-z0-9._~+/=-]+)`),
 	regexp.MustCompile(`(?i)(token|password|passwd|secret|webhook|webhook_url|authorization)(\s*[:=]\s*)([^\s,;]+)`),
 	regexp.MustCompile(`(?i)(bearer\s+)([A-Za-z0-9._~+/=-]+)`),
 	regexp.MustCompile(`https://hooks\.slack\.com/services/[^\s]+`),

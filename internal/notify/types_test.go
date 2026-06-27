@@ -2,6 +2,8 @@ package notify_test
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/rodrigogml/NotiCLI/internal/channels/email"
@@ -268,7 +270,7 @@ func TestChannelConfigValidateRequiresSupportedTypeAndMaps(t *testing.T) {
 }
 
 func TestAttachmentValidateAndEffectiveFilename(t *testing.T) {
-	attachment := notify.Attachment{Path: "/tmp/report.txt"}
+	attachment := notify.Attachment{Path: filepath.Join("tmp", "report.txt")}
 	if err := attachment.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v", err)
 	}
@@ -279,6 +281,125 @@ func TestAttachmentValidateAndEffectiveFilename(t *testing.T) {
 	if err := (notify.Attachment{}).Validate(); err == nil {
 		t.Fatal("Validate() error = nil, want missing path error")
 	}
+}
+
+func TestValidateAttachmentsAcceptsRelativeAndAbsolutePaths(t *testing.T) {
+	baseDir := t.TempDir()
+	absolute := filepath.Join(baseDir, "absolute.txt")
+	if err := os.WriteFile(absolute, []byte("absolute"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	relativeDir := filepath.Join(baseDir, "relative")
+	if err := os.Mkdir(relativeDir, 0o700); err != nil {
+		t.Fatalf("Mkdir() error = %v", err)
+	}
+	relative := filepath.Join("relative", "report.txt")
+	if err := os.WriteFile(filepath.Join(baseDir, relative), []byte("relative"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	originalWorkingDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	if err := os.Chdir(baseDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+	t.Cleanup(func() {
+		os.Chdir(originalWorkingDir)
+	})
+
+	request := validRequest()
+	request.Attachments = []notify.Attachment{
+		{Path: absolute},
+		{Path: relative},
+	}
+	attachments, err := notify.ValidateAttachments(request, validConfiguration().Channels[notify.ChannelEmail])
+	if err != nil {
+		t.Fatalf("ValidateAttachments() error = %v", err)
+	}
+	if attachments[0].Path != absolute {
+		t.Fatalf("absolute path = %q, want %q", attachments[0].Path, absolute)
+	}
+	if attachments[1].Path != relative {
+		t.Fatalf("relative path = %q, want %q", attachments[1].Path, relative)
+	}
+	if attachments[1].Filename != "report.txt" {
+		t.Fatalf("relative filename = %q, want report.txt", attachments[1].Filename)
+	}
+}
+
+func TestValidateAttachmentsEnrichesMultipleReadableFiles(t *testing.T) {
+	first := writeTempFile(t, "report.txt", "plain text")
+	second := writeTempFile(t, "data.json", `{"ok":true}`)
+	request := validRequest()
+	request.Attachments = []notify.Attachment{
+		{Path: first},
+		{Path: second, Filename: "custom.json"},
+	}
+
+	attachments, err := notify.ValidateAttachments(request, validConfiguration().Channels[notify.ChannelEmail])
+	if err != nil {
+		t.Fatalf("ValidateAttachments() error = %v", err)
+	}
+	if len(attachments) != 2 {
+		t.Fatalf("attachments length = %d, want 2", len(attachments))
+	}
+	if attachments[0].Filename != "report.txt" {
+		t.Fatalf("Filename = %q, want report.txt", attachments[0].Filename)
+	}
+	if attachments[0].Size == 0 {
+		t.Fatal("Size = 0, want file size")
+	}
+	if attachments[0].ContentType == "" {
+		t.Fatal("ContentType is empty")
+	}
+	if attachments[1].Filename != "custom.json" {
+		t.Fatalf("Filename = %q, want custom.json", attachments[1].Filename)
+	}
+}
+
+func TestValidateAttachmentsRejectsMissingFileAndDirectory(t *testing.T) {
+	request := validRequest()
+	request.Attachments = []notify.Attachment{{Path: filepath.Join(t.TempDir(), "missing.txt")}}
+
+	_, err := notify.ValidateAttachments(request, validConfiguration().Channels[notify.ChannelEmail])
+	assertDiagnosticCategory(t, err, diagnostics.CategoryAttachmentError)
+
+	request.Attachments = []notify.Attachment{{Path: t.TempDir()}}
+	_, err = notify.ValidateAttachments(request, validConfiguration().Channels[notify.ChannelEmail])
+	assertDiagnosticCategory(t, err, diagnostics.CategoryAttachmentError)
+}
+
+func TestValidateAttachmentsRejectsUnreadableFile(t *testing.T) {
+	path := writeTempFile(t, "blocked.txt", "secret")
+	if err := os.Chmod(path, 0o000); err != nil {
+		t.Fatalf("Chmod() error = %v", err)
+	}
+	t.Cleanup(func() {
+		os.Chmod(path, 0o600)
+	})
+
+	request := validRequest()
+	request.Attachments = []notify.Attachment{{Path: path}}
+	_, err := notify.ValidateAttachments(request, validConfiguration().Channels[notify.ChannelEmail])
+	assertDiagnosticCategory(t, err, diagnostics.CategoryAttachmentError)
+}
+
+func TestValidateAttachmentsRejectsUnsupportedChannelPolicy(t *testing.T) {
+	request := validRequest()
+	request.Channel = notify.ChannelSlack
+	request.Attachments = []notify.Attachment{{Path: writeTempFile(t, "report.txt", "plain text")}}
+	channel := notify.ChannelConfig{
+		Type:             notify.ChannelSlack,
+		Enabled:          true,
+		Settings:         map[string]string{"workspace": "ops"},
+		Secrets:          map[string]string{"webhook_url": "secret"},
+		AttachmentPolicy: notify.AttachmentPolicyUnsupported,
+	}
+
+	_, err := notify.ValidateAttachments(request, channel)
+	assertDiagnosticCategory(t, err, diagnostics.CategoryAttachmentError)
 }
 
 func TestDeliveryResultConstructorsSetStateAndExitCode(t *testing.T) {
@@ -340,4 +461,14 @@ func assertDiagnosticCategory(t *testing.T, err error, want diagnostics.Category
 	if diagnostic.Category != want {
 		t.Fatalf("Category = %q, want %q", diagnostic.Category, want)
 	}
+}
+
+func writeTempFile(t *testing.T, name, content string) string {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), name)
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	return path
 }

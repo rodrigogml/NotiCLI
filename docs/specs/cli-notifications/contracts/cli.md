@@ -18,6 +18,14 @@ Contratos de interface externa para a CLI do NotiCLI.
 | `--message <text>` | yes | Non-empty | Notification body |
 | `--attach <path>` | no | File must exist and be readable | May be repeated for multiple attachments |
 
+### Attachment Behavior
+
+| Channel | Initial MVP behavior |
+|---------|----------------------|
+| `email` | Supports readable file attachments using multipart MIME. |
+| `telegram` | Does not support attachments in the initial MVP; requests with attachments fail with `attachment_error`. |
+| `slack` | Does not support attachments through the incoming webhook flow; requests with attachments fail with `attachment_error`. |
+
 ### Result Semantics
 
 | Exit Code | Category | Description |
@@ -67,7 +75,7 @@ noticli send --sender DeployBot --recipient ops --channel slack --title "Deploy 
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `id` | yes | Stable identifier used by CLI callers |
+| `id` | no | Stable identifier used by CLI callers; defaults to the recipient map key when omitted |
 | `name` | no | Human-readable label |
 | `email` | conditional | Required for email delivery to this recipient |
 | `telegram_chat_id` | conditional | Required for Telegram delivery to this recipient |
@@ -78,11 +86,11 @@ noticli send --sender DeployBot --recipient ops --channel slack --title "Deploy 
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `type` | yes | `email`, `telegram` or `slack` |
+| `type` | no | `email`, `telegram` or `slack`; defaults to the channel map key when omitted |
 | `enabled` | no | Defaults to true |
 | `settings` | yes | Non-empty map of non-secret settings required by the channel |
 | `secrets` | yes | Non-empty map of secret-bearing values required by the channel |
-| `attachments` | yes | Channel attachment policy |
+| `attachments` | no | Channel attachment policy; defaults to `unsupported` when omitted |
 
 ### MVP Required Secret Keys
 

@@ -173,10 +173,10 @@ func TestRunLoadsConfigFromConfigFlag(t *testing.T) {
 		"--title", "Backup failed",
 		"--message", "Nightly backup failed",
 	}, &stdout, &stderr)
-	if code != 1 {
-		t.Fatalf("Run() exit code = %d, want dispatch placeholder code 1", code)
+	if code != 4 {
+		t.Fatalf("Run() exit code = %d, want invalid_config code 4", code)
 	}
-	if got := stderr.String(); got != "internal_error: dispatch not implemented\n" {
+	if got := stderr.String(); got != "invalid_config: email: required setting \"host\" is missing\n" {
 		t.Fatalf("stderr = %q", got)
 	}
 }
