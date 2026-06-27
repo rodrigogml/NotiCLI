@@ -13,7 +13,7 @@ func TestParseSendMapsFlagsToNotificationRequest(t *testing.T) {
 	request, err := cli.ParseWithExecutablePath([]string{
 		"send",
 		"--config", "./noticli.json",
-		"--sender-system", "BackupJob",
+		"--sender", "BackupJob",
 		"--recipient", "ops",
 		"--channel", "email",
 		"--title", "Backup failed",
@@ -56,7 +56,7 @@ func TestParseSendDefaultsConfigPathToExecutableDirectory(t *testing.T) {
 
 	request, err := cli.ParseWithExecutablePath([]string{
 		"send",
-		"--sender-system", "BackupJob",
+		"--sender", "BackupJob",
 		"--recipient", "ops",
 		"--channel", "email",
 		"--title", "Backup failed",
@@ -76,7 +76,7 @@ func TestParseSendRejectsEmptyExplicitConfigPath(t *testing.T) {
 	_, err := cli.ParseWithExecutablePath([]string{
 		"send",
 		"--config", "",
-		"--sender-system", "BackupJob",
+		"--sender", "BackupJob",
 		"--recipient", "ops",
 		"--channel", "email",
 		"--title", "Backup failed",
@@ -96,28 +96,28 @@ func TestParseSendRejectsMissingSenderSystem(t *testing.T) {
 		"--message", "Nightly backup failed",
 	}, filepath.Join(t.TempDir(), "noticli"))
 	if err == nil {
-		t.Fatal("Parse() error = nil, want missing sender-system error")
+		t.Fatal("Parse() error = nil, want missing sender error")
 	}
 }
 
 func TestParseSendRejectsLongSenderSystem(t *testing.T) {
 	_, err := cli.ParseWithExecutablePath([]string{
 		"send",
-		"--sender-system", "SystemNameLongerThan20",
+		"--sender", "SystemNameLongerThan20",
 		"--recipient", "ops",
 		"--channel", "email",
 		"--title", "Backup failed",
 		"--message", "Nightly backup failed",
 	}, filepath.Join(t.TempDir(), "noticli"))
 	if err == nil {
-		t.Fatal("Parse() error = nil, want long sender-system error")
+		t.Fatal("Parse() error = nil, want long sender error")
 	}
 }
 
 func TestParseSendRejectsMissingRequiredFlags(t *testing.T) {
 	_, err := cli.ParseWithExecutablePath([]string{
 		"send",
-		"--sender-system", "BackupJob",
+		"--sender", "BackupJob",
 		"--channel", "email",
 		"--title", "Backup failed",
 		"--message", "Nightly backup failed",
@@ -130,7 +130,7 @@ func TestParseSendRejectsMissingRequiredFlags(t *testing.T) {
 func TestParseSendRejectsUnsupportedChannel(t *testing.T) {
 	_, err := cli.ParseWithExecutablePath([]string{
 		"send",
-		"--sender-system", "BackupJob",
+		"--sender", "BackupJob",
 		"--recipient", "ops",
 		"--channel", "sms",
 		"--title", "Backup failed",
@@ -145,7 +145,7 @@ func TestRunIsNonInteractiveAndReturnsInvalidInputForParseErrors(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	code := cli.Run([]string{"send", "--sender-system", "BackupJob", "--recipient", "ops"}, &stdout, &stderr)
+	code := cli.Run([]string{"send", "--sender", "BackupJob", "--recipient", "ops"}, &stdout, &stderr)
 	if code != cli.ExitInvalidInput {
 		t.Fatalf("Run() exit code = %d, want %d", code, cli.ExitInvalidInput)
 	}
