@@ -59,7 +59,7 @@ noticli send --sender DeployBot --recipient ops --channel slack --title "Deploy 
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `recipients` | yes | Map or list of configured recipients |
+| `recipients` | yes | Map of configured recipients keyed by recipient ID |
 | `channels` | yes | Map of channel configurations |
 | `defaults` | no | Optional defaults for command behavior |
 
