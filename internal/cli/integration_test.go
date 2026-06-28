@@ -3,14 +3,21 @@ package cli_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/rodrigogml/NotiCLI/internal/channels/telegram"
 	"github.com/rodrigogml/NotiCLI/internal/cli"
 	"github.com/rodrigogml/NotiCLI/internal/diagnostics"
 	"github.com/rodrigogml/NotiCLI/internal/notify"
+	"github.com/rodrigogml/NotiCLI/internal/telegramtopics"
 )
 
 func TestRunWithSendersHappyPathByChannel(t *testing.T) {
@@ -160,6 +167,162 @@ func TestRunWithSendersRedactsConfiguredSecretsFromChannelDiagnostics(t *testing
 	}
 }
 
+func TestRunWithSendersTelegramPrivateAndTopicsEndToEnd(t *testing.T) {
+	var createCalls int
+	var sendPayloads []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/bot123456:ABCDEF/createForumTopic":
+			createCalls++
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"ok":true,"result":{"message_thread_id":4,"name":"BackupJob"}}`))
+		case "/bot123456:ABCDEF/sendMessage":
+			var payload map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Fatalf("Decode(send) error = %v", err)
+			}
+			sendPayloads = append(sendPayloads, payload)
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"ok":true}`))
+		default:
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	configPath := writeTelegramIntegrationConfig(t, `"private": {"telegram_chat_id": "12345"}, "topics": {"telegram_delivery_mode": "topics", "telegram_topic_group_chat_id": "-1001234567890"}`)
+	repository := telegramtopics.NewFileRepository(filepath.Join(t.TempDir(), "telegram-topics.json"))
+	sender := telegram.NewSender(server.Client(), telegram.WithBaseURL(server.URL), telegram.WithTopicStore(repository))
+
+	for _, recipient := range []string{"private", "topics", "topics"} {
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		args := []string{
+			"send",
+			"--config", configPath,
+			"--sender", "BackupJob",
+			"--recipient", recipient,
+			"--channel", notify.ChannelTelegram,
+			"--title", "Backup failed",
+			"--message", "Nightly backup failed",
+		}
+		code := cli.RunWithSenders(args, &stdout, &stderr, sender)
+		if code != diagnostics.ExitSuccess {
+			t.Fatalf("RunWithSenders(%s) exit code = %d, want 0; stderr=%q", recipient, code, stderr.String())
+		}
+	}
+
+	if createCalls != 1 {
+		t.Fatalf("createCalls = %d, want one creation for two topic sends", createCalls)
+	}
+	if len(sendPayloads) != 3 {
+		t.Fatalf("sendPayloads length = %d, want 3", len(sendPayloads))
+	}
+	if sendPayloads[0]["text"] != "[BackupJob] Backup failed\n\nNightly backup failed" {
+		t.Fatalf("private text = %q", sendPayloads[0]["text"])
+	}
+	if _, ok := sendPayloads[0]["message_thread_id"]; ok {
+		t.Fatalf("private payload has thread ID: %#v", sendPayloads[0])
+	}
+	for index, payload := range sendPayloads[1:] {
+		if payload["text"] != "Backup failed\n\nNightly backup failed" {
+			t.Fatalf("topic text %d = %q", index, payload["text"])
+		}
+		if payload["message_thread_id"] != float64(4) {
+			t.Fatalf("topic thread %d = %#v, want 4", index, payload["message_thread_id"])
+		}
+	}
+}
+
+func TestRunWithSendersTelegramTopicsIncompleteConfiguration(t *testing.T) {
+	configPath := writeTelegramIntegrationConfig(t, `"topics": {"telegram_delivery_mode": "topics"}`)
+	sender := telegram.NewSender(failingHTTPClient{})
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := cli.RunWithSenders([]string{
+		"send",
+		"--config", configPath,
+		"--sender", "BackupJob",
+		"--recipient", "topics",
+		"--channel", notify.ChannelTelegram,
+		"--title", "Backup failed",
+		"--message", "Nightly backup failed",
+	}, &stdout, &stderr, sender)
+	if code != diagnostics.ExitInvalidConfig {
+		t.Fatalf("RunWithSenders() exit code = %d, want invalid_config; stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "invalid_config: telegram:") {
+		t.Fatalf("stderr = %q, want telegram invalid_config", stderr.String())
+	}
+}
+
+func TestRunWithSendersTelegramStaleTopicRecovery(t *testing.T) {
+	var sendCalls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/bot123456:ABCDEF/sendMessage":
+			sendCalls++
+			if sendCalls == 1 {
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte(`{"ok":false,"description":"Bad Request: message thread not found"}`))
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"ok":true}`))
+		case "/bot123456:ABCDEF/createForumTopic":
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"ok":true,"result":{"message_thread_id":6,"name":"BackupJob"}}`))
+		default:
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	configPath := writeTelegramIntegrationConfig(t, `"topics": {"telegram_delivery_mode": "topics", "telegram_topic_group_chat_id": "-1001234567890"}`)
+	repository := telegramtopics.NewFileRepository(filepath.Join(t.TempDir(), "telegram-topics.json"))
+	now := "2026-06-28T12:00:00Z"
+	if err := repository.Save(context.Background(), telegramtopics.State{
+		Version:   telegramtopics.StateVersion,
+		UpdatedAt: mustParseTime(t, now),
+		Associations: []telegramtopics.Association{
+			{
+				RecipientID:      "topics",
+				ChatID:           "-1001234567890",
+				Sender:           "BackupJob",
+				TopicName:        "BackupJob",
+				MessageThreadID:  4,
+				CreatedByNotiCLI: true,
+				CreatedAt:        mustParseTime(t, now),
+				Status:           telegramtopics.TopicStatusActive,
+			},
+		},
+	}); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	sender := telegram.NewSender(server.Client(), telegram.WithBaseURL(server.URL), telegram.WithTopicStore(repository))
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := cli.RunWithSenders([]string{
+		"send",
+		"--config", configPath,
+		"--sender", "BackupJob",
+		"--recipient", "topics",
+		"--channel", notify.ChannelTelegram,
+		"--title", "Backup failed",
+		"--message", "Nightly backup failed",
+	}, &stdout, &stderr, sender)
+	if code != diagnostics.ExitSuccess {
+		t.Fatalf("RunWithSenders() exit code = %d, want success; stderr=%q", code, stderr.String())
+	}
+	if sendCalls != 2 {
+		t.Fatalf("sendCalls = %d, want original send and retry", sendCalls)
+	}
+}
+
 func sendArgs(configPath, channel string) []string {
 	return []string{
 		"send",
@@ -178,6 +341,12 @@ type fakeChannelSender struct {
 	err     error
 	calls   int
 	request notify.Request
+}
+
+type failingHTTPClient struct{}
+
+func (failingHTTPClient) Do(*http.Request) (*http.Response, error) {
+	return nil, errors.New("unexpected HTTP call")
 }
 
 func (f *fakeChannelSender) Name() string {
@@ -229,6 +398,31 @@ func writeInvalidIntegrationConfig(t *testing.T) string {
 	t.Helper()
 
 	return writeFile(t, "invalid-noticli.json", `{"recipients": {}, "channels": {}}`)
+}
+
+func writeTelegramIntegrationConfig(t *testing.T, recipients string) string {
+	t.Helper()
+
+	return writeFile(t, "telegram-noticli.json", `{
+		"recipients": {`+recipients+`},
+		"channels": {
+			"telegram": {
+				"settings": {"parse_mode": "HTML"},
+				"secrets": {"token": "123456:ABCDEF"},
+				"attachments": "unsupported"
+			}
+		}
+	}`)
+}
+
+func mustParseTime(t *testing.T, value string) time.Time {
+	t.Helper()
+
+	parsed, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		t.Fatalf("Parse(%q) error = %v", value, err)
+	}
+	return parsed
 }
 
 func writeFile(t *testing.T, name, content string) string {

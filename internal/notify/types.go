@@ -246,17 +246,28 @@ func validateAttachment(attachment Attachment) (Attachment, error) {
 }
 
 type Recipient struct {
-	ID             string
-	Name           string
-	Email          string
-	TelegramChatID string
-	SlackDest      string
-	Enabled        bool
+	ID                       string
+	Name                     string
+	Email                    string
+	TelegramChatID           string
+	TelegramDeliveryMode     string
+	TelegramTopicGroupChatID string
+	TelegramTopicGroupName   string
+	SlackDest                string
+	Enabled                  bool
 }
+
+const (
+	TelegramDeliveryModePrivate = "private"
+	TelegramDeliveryModeTopics  = "topics"
+)
 
 func (r Recipient) Validate() error {
 	if strings.TrimSpace(r.ID) == "" {
 		return diagnostics.New(diagnostics.CategoryInvalidConfig, "recipient id is required")
+	}
+	if !r.hasValidTelegramDeliveryMode() {
+		return diagnostics.ForChannel(diagnostics.CategoryInvalidConfig, ChannelTelegram, fmt.Sprintf("recipient %q has unsupported telegram_delivery_mode %q", r.ID, r.TelegramDeliveryMode))
 	}
 	return nil
 }
@@ -267,6 +278,12 @@ func (r Recipient) ValidateForChannel(channel string) error {
 	}
 	if !r.Enabled {
 		return diagnostics.New(diagnostics.CategoryInvalidConfig, fmt.Sprintf("recipient %q is disabled", r.ID))
+	}
+	if channel == ChannelTelegram {
+		if err := r.validateTelegramDestination(); err != nil {
+			return err
+		}
+		return nil
 	}
 	if _, ok := r.DestinationFor(channel); !ok {
 		return diagnostics.ForChannel(diagnostics.CategoryInvalidConfig, channel, fmt.Sprintf("recipient %q has no configured destination", r.ID))
@@ -279,12 +296,53 @@ func (r Recipient) DestinationFor(channel string) (string, bool) {
 	case ChannelEmail:
 		return strings.TrimSpace(r.Email), strings.TrimSpace(r.Email) != ""
 	case ChannelTelegram:
-		return strings.TrimSpace(r.TelegramChatID), strings.TrimSpace(r.TelegramChatID) != ""
+		switch r.EffectiveTelegramDeliveryMode() {
+		case TelegramDeliveryModePrivate:
+			return strings.TrimSpace(r.TelegramChatID), strings.TrimSpace(r.TelegramChatID) != ""
+		case TelegramDeliveryModeTopics:
+			destination := strings.TrimSpace(r.TelegramTopicGroupChatID)
+			return destination, destination != ""
+		default:
+			return "", false
+		}
 	case ChannelSlack:
 		return strings.TrimSpace(r.SlackDest), strings.TrimSpace(r.SlackDest) != ""
 	default:
 		return "", false
 	}
+}
+
+func (r Recipient) EffectiveTelegramDeliveryMode() string {
+	mode := strings.TrimSpace(r.TelegramDeliveryMode)
+	if mode == "" {
+		return TelegramDeliveryModePrivate
+	}
+	return mode
+}
+
+func (r Recipient) hasValidTelegramDeliveryMode() bool {
+	switch r.EffectiveTelegramDeliveryMode() {
+	case TelegramDeliveryModePrivate, TelegramDeliveryModeTopics:
+		return true
+	default:
+		return false
+	}
+}
+
+func (r Recipient) validateTelegramDestination() error {
+	switch r.EffectiveTelegramDeliveryMode() {
+	case TelegramDeliveryModePrivate:
+		if strings.TrimSpace(r.TelegramChatID) == "" {
+			return diagnostics.ForChannel(diagnostics.CategoryInvalidConfig, ChannelTelegram, fmt.Sprintf("recipient %q has no configured telegram private chat destination", r.ID))
+		}
+	case TelegramDeliveryModeTopics:
+		if strings.TrimSpace(r.TelegramTopicGroupChatID) == "" {
+			return diagnostics.ForChannel(diagnostics.CategoryInvalidConfig, ChannelTelegram, fmt.Sprintf("recipient %q has no configured telegram topic group destination", r.ID))
+		}
+	default:
+		return diagnostics.ForChannel(diagnostics.CategoryInvalidConfig, ChannelTelegram, fmt.Sprintf("recipient %q has unsupported telegram_delivery_mode %q", r.ID, r.TelegramDeliveryMode))
+	}
+	return nil
 }
 
 type ChannelConfig struct {

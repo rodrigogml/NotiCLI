@@ -129,6 +129,86 @@ func TestRecipientDestinationForChannel(t *testing.T) {
 	}
 }
 
+func TestRecipientTelegramDeliveryModeDefaultsToPrivate(t *testing.T) {
+	recipient := notify.Recipient{
+		ID:             "ops",
+		TelegramChatID: "12345",
+		Enabled:        true,
+	}
+
+	if got := recipient.EffectiveTelegramDeliveryMode(); got != notify.TelegramDeliveryModePrivate {
+		t.Fatalf("EffectiveTelegramDeliveryMode() = %q, want %q", got, notify.TelegramDeliveryModePrivate)
+	}
+	got, ok := recipient.DestinationFor(notify.ChannelTelegram)
+	if !ok {
+		t.Fatal("DestinationFor(telegram) ok = false")
+	}
+	if got != "12345" {
+		t.Fatalf("DestinationFor(telegram) = %q, want private chat ID", got)
+	}
+	if err := recipient.ValidateForChannel(notify.ChannelTelegram); err != nil {
+		t.Fatalf("ValidateForChannel(telegram) error = %v", err)
+	}
+}
+
+func TestRecipientTelegramDeliveryModeAcceptsTopicsDestination(t *testing.T) {
+	recipient := notify.Recipient{
+		ID:                       "ops",
+		TelegramDeliveryMode:     notify.TelegramDeliveryModeTopics,
+		TelegramTopicGroupChatID: "-1001234567890",
+		TelegramTopicGroupName:   "NotiCLI",
+		Enabled:                  true,
+	}
+
+	if got := recipient.EffectiveTelegramDeliveryMode(); got != notify.TelegramDeliveryModeTopics {
+		t.Fatalf("EffectiveTelegramDeliveryMode() = %q, want %q", got, notify.TelegramDeliveryModeTopics)
+	}
+	got, ok := recipient.DestinationFor(notify.ChannelTelegram)
+	if !ok {
+		t.Fatal("DestinationFor(telegram) ok = false")
+	}
+	if got != "-1001234567890" {
+		t.Fatalf("DestinationFor(telegram) = %q, want topic group chat ID", got)
+	}
+	if err := recipient.ValidateForChannel(notify.ChannelTelegram); err != nil {
+		t.Fatalf("ValidateForChannel(telegram) error = %v", err)
+	}
+}
+
+func TestRecipientTelegramValidationRejectsUnsupportedDeliveryMode(t *testing.T) {
+	recipient := notify.Recipient{
+		ID:                   "ops",
+		TelegramDeliveryMode: "broadcast",
+		TelegramChatID:       "12345",
+		Enabled:              true,
+	}
+
+	assertDiagnosticCategory(t, recipient.Validate(), diagnostics.CategoryInvalidConfig)
+	assertDiagnosticCategory(t, recipient.ValidateForChannel(notify.ChannelTelegram), diagnostics.CategoryInvalidConfig)
+}
+
+func TestRecipientTelegramValidationRequiresDestinationForSelectedMode(t *testing.T) {
+	recipient := notify.Recipient{
+		ID:      "ops",
+		Enabled: true,
+	}
+	assertDiagnosticCategory(t, recipient.ValidateForChannel(notify.ChannelTelegram), diagnostics.CategoryInvalidConfig)
+
+	recipient = notify.Recipient{
+		ID:                   "ops",
+		TelegramDeliveryMode: notify.TelegramDeliveryModePrivate,
+		Enabled:              true,
+	}
+	assertDiagnosticCategory(t, recipient.ValidateForChannel(notify.ChannelTelegram), diagnostics.CategoryInvalidConfig)
+
+	recipient = notify.Recipient{
+		ID:                   "ops",
+		TelegramDeliveryMode: notify.TelegramDeliveryModeTopics,
+		Enabled:              true,
+	}
+	assertDiagnosticCategory(t, recipient.ValidateForChannel(notify.ChannelTelegram), diagnostics.CategoryInvalidConfig)
+}
+
 func TestConfigurationValidateAllowsMultipleRecipientsAndGlobalChannels(t *testing.T) {
 	config := notify.Configuration{
 		Recipients: map[string]notify.Recipient{

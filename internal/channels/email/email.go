@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"mime/multipart"
 	"net"
+	"net/mail"
 	"net/smtp"
 	"net/textproto"
 	"os"
@@ -18,6 +19,7 @@ import (
 
 const (
 	settingFrom     = "from"
+	settingFromName = "from_name"
 	settingHost     = "host"
 	settingPort     = "port"
 	settingUsername = "username"
@@ -35,6 +37,7 @@ type Message struct {
 	Username     string
 	Password     string
 	From         string
+	FromName     string
 	To           string
 	Subject      string
 	Body         string
@@ -109,8 +112,9 @@ func buildMessage(request notify.Request, recipient notify.Recipient, config not
 		Username:     username,
 		Password:     password,
 		From:         from,
+		FromName:     strings.TrimSpace(config.Settings[settingFromName]),
 		To:           to,
-		Subject:      request.Title,
+		Subject:      formatSubject(request.SenderSystem, request.Title),
 		Body:         request.Message,
 		SenderSystem: request.SenderSystem,
 		Attachments:  request.Attachments,
@@ -155,7 +159,7 @@ func (SMTPTransport) Send(ctx context.Context, message Message) error {
 
 func formatPlainTextMessage(message Message) string {
 	headers := []string{
-		fmt.Sprintf("From: %s", message.From),
+		fmt.Sprintf("From: %s", formatAddress(message.FromName, message.From)),
 		fmt.Sprintf("To: %s", message.To),
 		fmt.Sprintf("Subject: %s", message.Subject),
 		"MIME-Version: 1.0",
@@ -176,7 +180,7 @@ func formatSMTPMessage(message Message) ([]byte, error) {
 	var buffer bytes.Buffer
 	writer := multipart.NewWriter(&buffer)
 	headers := []string{
-		fmt.Sprintf("From: %s", message.From),
+		fmt.Sprintf("From: %s", formatAddress(message.FromName, message.From)),
 		fmt.Sprintf("To: %s", message.To),
 		fmt.Sprintf("Subject: %s", message.Subject),
 		"MIME-Version: 1.0",
@@ -207,6 +211,29 @@ func formatSMTPMessage(message Message) ([]byte, error) {
 		return nil, err
 	}
 	return buffer.Bytes(), nil
+}
+
+func formatAddress(name, address string) string {
+	address = strings.TrimSpace(address)
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return address
+	}
+	return (&mail.Address{Name: name, Address: address}).String()
+}
+
+func formatSubject(senderSystem, title string) string {
+	senderSystem = sanitizeHeaderValue(strings.TrimSpace(senderSystem))
+	title = sanitizeHeaderValue(strings.TrimSpace(title))
+	if senderSystem == "" {
+		return title
+	}
+	return fmt.Sprintf("[%s] %s", senderSystem, title)
+}
+
+func sanitizeHeaderValue(value string) string {
+	replacer := strings.NewReplacer("\r", " ", "\n", " ")
+	return strings.Join(strings.Fields(replacer.Replace(value)), " ")
 }
 
 func writeAttachmentPart(writer *multipart.Writer, attachment notify.Attachment) error {

@@ -46,6 +46,12 @@ Example `noticli.json`:
       "email": "ops@example.invalid",
       "telegram_chat_id": "TELEGRAM_CHAT_ID",
       "slack_destination": "#ops"
+    },
+    "ops-telegram-topics": {
+      "name": "Operations Telegram Topics",
+      "telegram_delivery_mode": "topics",
+      "telegram_topic_group_chat_id": "TELEGRAM_SUPERGROUP_CHAT_ID",
+      "telegram_topic_group_name": "Operations Notifications"
     }
   },
   "channels": {
@@ -54,6 +60,7 @@ Example `noticli.json`:
         "host": "smtp.example.invalid",
         "port": "587",
         "from": "noticli@example.invalid",
+        "from_name": "NotiCLI",
         "username": "smtp-user"
       },
       "secrets": {
@@ -96,9 +103,14 @@ Diagnostic output is not a secret storage boundary. Avoid putting credentials or
 
 ## Channel Setup
 
-Email requires SMTP settings under `channels.email.settings`: `host`, `port`, `from` and optional `username`. It requires `channels.email.secrets.smtp_password`. If `username` is omitted, NotiCLI uses `from` for SMTP authentication.
+Email requires SMTP settings under `channels.email.settings`: `host`, `port`, `from` and optional `from_name` and `username`. It requires `channels.email.secrets.smtp_password`. If `from_name` is set, it is used as the display name in the email `From` header. If `username` is omitted, NotiCLI uses `from` for SMTP authentication. Email subjects are prefixed with the calling sender as `[sender] title`.
 
-Telegram requires a bot token in `channels.telegram.secrets.token` and a recipient `telegram_chat_id`. The initial MVP sends text messages only.
+Telegram requires a bot token in `channels.telegram.secrets.token`. A recipient can use one of two delivery modes:
+
+- Private chat delivery: omit `telegram_delivery_mode` or set it to `private`, and set `telegram_chat_id`. Private Telegram titles are formatted as `[sender] title`.
+- Topic group delivery: set `telegram_delivery_mode` to `topics`, set `telegram_topic_group_chat_id` to a topic-enabled supergroup ID, and optionally set `telegram_topic_group_name` for diagnostics. Topic messages use the topic as sender context, so titles are sent without the `[sender]` prefix.
+
+Topic delivery stores generated sender-topic associations in a sibling state file next to the active config. For `/opt/NotiCLI/config/noticli.json`, the state file is `/opt/NotiCLI/config/noticli.telegram-topics.json`. Back up this file with the production installation; if it is lost, NotiCLI may create replacement topics because Telegram bots cannot list or find every existing topic by name. Before creating a new topic, NotiCLI verifies that the state file can be written; write failures abort the notification with an error instead of creating an untracked topic. Future assisted commands such as `/noticli_bind`, `/noticli_unbind` and `/noticli_topics` are reserved for binding or listing manually managed topics, but they are not part of the current CLI send flow.
 
 Slack requires an incoming webhook URL in `channels.slack.secrets.webhook_url` and a recipient `slack_destination`. The initial MVP sends text messages through the webhook only.
 

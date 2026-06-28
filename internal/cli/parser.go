@@ -17,6 +17,7 @@ import (
 	"github.com/rodrigogml/NotiCLI/internal/config"
 	"github.com/rodrigogml/NotiCLI/internal/diagnostics"
 	"github.com/rodrigogml/NotiCLI/internal/notify"
+	"github.com/rodrigogml/NotiCLI/internal/telegramtopics"
 )
 
 const (
@@ -139,7 +140,41 @@ func isSupportedChannel(channel string) bool {
 }
 
 func Run(args []string, stdout, stderr io.Writer) int {
-	return RunWithSenders(args, stdout, stderr, email.Sender{}, telegram.Sender{}, slack.Sender{})
+	request, err := Parse(args)
+	if err != nil {
+		var parseErr ParseError
+		if errors.As(err, &parseErr) && parseErr.ShowHelp {
+			return writeUsageFailure(stderr, parseErr.Message)
+		}
+		return diagnostics.WriteFailure(stderr, diagnostics.New(diagnostics.CategoryInvalidInput, err.Error()))
+	}
+	configuration, err := config.Load(request.ConfigPath)
+	if err != nil {
+		return diagnostics.WriteFailure(stderr, err)
+	}
+
+	result, err := app.New(configuration, defaultSenders(request.ConfigPath)...).Notify(context.Background(), request)
+	redactor := diagnostics.NewRedactor(configuration.SecretValues()...)
+	if err != nil {
+		return diagnostics.WriteFailureWithRedactor(stderr, err, redactor)
+	}
+	if !result.Success {
+		return diagnostics.WriteFailureWithRedactor(stderr, diagnostics.ForChannel(result.Category, result.Channel, result.Message), redactor)
+	}
+	if strings.TrimSpace(result.Message) != "" {
+		fmt.Fprintln(stdout, strings.TrimSpace(result.Message))
+	}
+
+	return result.ExitCode
+}
+
+func defaultSenders(configPath string) []notify.ChannelSender {
+	topicStore := telegramtopics.NewFileRepository(telegramtopics.StatePathForConfig(configPath))
+	return []notify.ChannelSender{
+		email.Sender{},
+		telegram.NewSenderWithTopicStore(nil, topicStore),
+		slack.Sender{},
+	}
 }
 
 func RunWithSenders(args []string, stdout, stderr io.Writer, senders ...notify.ChannelSender) int {

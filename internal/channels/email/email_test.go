@@ -35,11 +35,14 @@ func TestSendBuildsMessageAndUsesTransport(t *testing.T) {
 	if transport.message.From != "noticli@example.com" {
 		t.Fatalf("From = %q, want noticli@example.com", transport.message.From)
 	}
+	if transport.message.FromName != "NotiCLI" {
+		t.Fatalf("FromName = %q, want NotiCLI", transport.message.FromName)
+	}
 	if transport.message.To != "ops@example.com" {
 		t.Fatalf("To = %q, want ops@example.com", transport.message.To)
 	}
-	if transport.message.Subject != "Backup failed" {
-		t.Fatalf("Subject = %q, want Backup failed", transport.message.Subject)
+	if transport.message.Subject != "[BackupJob] Backup failed" {
+		t.Fatalf("Subject = %q, want [BackupJob] Backup failed", transport.message.Subject)
 	}
 	if transport.message.Body != "Nightly backup failed" {
 		t.Fatalf("Body = %q, want Nightly backup failed", transport.message.Body)
@@ -121,16 +124,17 @@ func TestSendMapsTransportFailureToDeliveryFailure(t *testing.T) {
 func TestFormatPlainTextMessageIncludesHeadersAndBody(t *testing.T) {
 	formatted := formatPlainTextMessage(Message{
 		From:         "noticli@example.com",
+		FromName:     "NotiCLI",
 		To:           "ops@example.com",
-		Subject:      "Backup failed",
+		Subject:      "[BackupJob] Backup failed",
 		Body:         "Nightly backup failed",
 		SenderSystem: "BackupJob",
 	})
 
 	for _, want := range []string{
-		"From: noticli@example.com\r\n",
+		"From: \"NotiCLI\" <noticli@example.com>\r\n",
 		"To: ops@example.com\r\n",
-		"Subject: Backup failed\r\n",
+		"Subject: [BackupJob] Backup failed\r\n",
 		"X-NotiCLI-Sender: BackupJob\r\n",
 		"\r\nNightly backup failed\r\n",
 	} {
@@ -142,10 +146,11 @@ func TestFormatPlainTextMessageIncludesHeadersAndBody(t *testing.T) {
 
 func TestFormatSMTPMessageIncludesAttachmentPart(t *testing.T) {
 	data, err := formatSMTPMessage(Message{
-		From:    "noticli@example.com",
-		To:      "ops@example.com",
-		Subject: "Backup failed",
-		Body:    "Nightly backup failed",
+		From:     "noticli@example.com",
+		FromName: "NotiCLI",
+		To:       "ops@example.com",
+		Subject:  "[BackupJob] Backup failed",
+		Body:     "Nightly backup failed",
 		Attachments: []notify.Attachment{{
 			Path:        writeTempFile(t, "report.txt", "plain text"),
 			Filename:    "report.txt",
@@ -157,6 +162,8 @@ func TestFormatSMTPMessageIncludesAttachmentPart(t *testing.T) {
 	}
 	formatted := string(data)
 	for _, want := range []string{
+		"From: \"NotiCLI\" <noticli@example.com>",
+		"Subject: [BackupJob] Backup failed",
 		"Content-Type: multipart/mixed;",
 		"Content-Disposition: attachment; filename=\"report.txt\"",
 		"Content-Transfer-Encoding: base64",
@@ -204,6 +211,7 @@ func validConfig() notify.ChannelConfig {
 		Enabled: true,
 		Settings: map[string]string{
 			settingFrom:     "noticli@example.com",
+			settingFromName: "NotiCLI",
 			settingHost:     "smtp.example.com",
 			settingPort:     "587",
 			settingUsername: "smtp-user",

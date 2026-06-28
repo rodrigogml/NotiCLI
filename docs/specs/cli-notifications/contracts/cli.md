@@ -18,6 +18,8 @@ Contratos de interface externa para a CLI do NotiCLI.
 | `--message <text>` | yes | Non-empty | Notification body |
 | `--attach <path>` | no | File must exist and be readable | May be repeated for multiple attachments |
 
+For email delivery, the final subject is formatted as `[--sender value] --title value`.
+
 ### Attachment Behavior
 
 | Channel | Initial MVP behavior |
@@ -78,7 +80,10 @@ noticli send --sender DeployBot --recipient ops --channel slack --title "Deploy 
 | `id` | no | Stable identifier used by CLI callers; defaults to the recipient map key when omitted |
 | `name` | no | Human-readable label |
 | `email` | conditional | Required for email delivery to this recipient |
-| `telegram_chat_id` | conditional | Required for Telegram delivery to this recipient |
+| `telegram_chat_id` | conditional | Private chat ID for Telegram private delivery; retained for backward compatibility |
+| `telegram_delivery_mode` | no | `private` or `topics`; defaults to `private` when omitted |
+| `telegram_topic_group_chat_id` | conditional | Required for Telegram topic-based delivery |
+| `telegram_topic_group_name` | no | Human-readable label for the topic-enabled group |
 | `slack_destination` | conditional | Required for Slack delivery to this recipient when not implied by channel settings |
 | `enabled` | no | Defaults to true |
 
@@ -91,6 +96,12 @@ noticli send --sender DeployBot --recipient ops --channel slack --title "Deploy 
 | `settings` | yes | Non-empty map of non-secret settings required by the channel |
 | `secrets` | yes | Non-empty map of secret-bearing values required by the channel |
 | `attachments` | no | Channel attachment policy; defaults to `unsupported` when omitted |
+
+For email channels, `settings.from_name` is optional and controls the display name in the email `From` header while `settings.from` remains the sender email address used for delivery.
+
+For Telegram recipients, private delivery sends to `telegram_chat_id` and prefixes delivered titles as `[--sender value] --title value`. Topic delivery sends to `telegram_topic_group_chat_id`, creates or reuses one topic per sender, and sends the title without the `[--sender value]` prefix.
+
+Telegram topic associations are runtime state, not operator-authored configuration. The state file is derived from the active config path; for `/opt/NotiCLI/config/noticli.json`, it is `/opt/NotiCLI/config/noticli.telegram-topics.json`. It must be writable by the NotiCLI runtime before a topic is created and must be protected and backed up with the NotiCLI installation. Telegram Bot API does not provide complete topic listing or name lookup, so topics created outside NotiCLI may require future assisted binding. Reserved future bot commands include `/noticli_bind`, `/noticli_unbind` and `/noticli_topics`; they are outside the current MVP.
 
 ### MVP Required Secret Keys
 

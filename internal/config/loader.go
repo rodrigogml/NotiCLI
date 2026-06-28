@@ -17,12 +17,15 @@ type File struct {
 }
 
 type Recipient struct {
-	ID             string `json:"id"`
-	Name           string `json:"name"`
-	Email          string `json:"email"`
-	TelegramChatID string `json:"telegram_chat_id"`
-	SlackDest      string `json:"slack_destination"`
-	Enabled        *bool  `json:"enabled"`
+	ID                       string `json:"id"`
+	Name                     string `json:"name"`
+	Email                    string `json:"email"`
+	TelegramChatID           string `json:"telegram_chat_id"`
+	TelegramDeliveryMode     string `json:"telegram_delivery_mode"`
+	TelegramTopicGroupChatID string `json:"telegram_topic_group_chat_id"`
+	TelegramTopicGroupName   string `json:"telegram_topic_group_name"`
+	SlackDest                string `json:"slack_destination"`
+	Enabled                  *bool  `json:"enabled"`
 }
 
 type Channel struct {
@@ -67,12 +70,15 @@ func (f File) toDomain() notify.Configuration {
 			id = key
 		}
 		recipients[key] = notify.Recipient{
-			ID:             id,
-			Name:           recipient.Name,
-			Email:          recipient.Email,
-			TelegramChatID: recipient.TelegramChatID,
-			SlackDest:      recipient.SlackDest,
-			Enabled:        enabled,
+			ID:                       id,
+			Name:                     recipient.Name,
+			Email:                    recipient.Email,
+			TelegramChatID:           recipient.TelegramChatID,
+			TelegramDeliveryMode:     recipient.TelegramDeliveryMode,
+			TelegramTopicGroupChatID: recipient.TelegramTopicGroupChatID,
+			TelegramTopicGroupName:   recipient.TelegramTopicGroupName,
+			SlackDest:                recipient.SlackDest,
+			Enabled:                  enabled,
 		}
 	}
 
