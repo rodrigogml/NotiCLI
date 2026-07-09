@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -129,10 +130,128 @@ func parseSend(args []string, executablePath string) (notify.Request, error) {
 }
 
 func DefaultConfigPath(executablePath string) string {
+	for _, candidate := range candidateExecutablePaths(executablePath) {
+		if configPath := configPathInAncestorConfigDir(candidate); configPath != "" {
+			return configPath
+		}
+		if configPath := configPathBesideExecutable(candidate); configPath != "" {
+			return configPath
+		}
+	}
 	if executablePath == "" {
 		return DefaultConfigFileName
 	}
 	return filepath.Join(filepath.Dir(executablePath), DefaultConfigFileName)
+}
+
+func configPathInAncestorConfigDir(executablePath string) string {
+	for _, path := range executablePathChain(executablePath) {
+		for _, ancestor := range ancestorDirs(filepath.Dir(path)) {
+			configPath := filepath.Join(ancestor, "config", DefaultConfigFileName)
+			if resolved, ok := existingFilePath(configPath); ok {
+				return resolved
+			}
+		}
+	}
+	return ""
+}
+
+func candidateExecutablePaths(executablePath string) []string {
+	candidates := make([]string, 0, 2)
+	add := func(path string) {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			return
+		}
+		for _, existing := range candidates {
+			if existing == path {
+				return
+			}
+		}
+		candidates = append(candidates, path)
+	}
+
+	add(executablePath)
+	if invocation := strings.TrimSpace(os.Args[0]); invocation != "" {
+		if resolved, err := exec.LookPath(invocation); err == nil {
+			add(resolved)
+		}
+		add(invocation)
+	}
+	return candidates
+}
+
+func configPathBesideExecutable(executablePath string) string {
+	for _, path := range executablePathChain(executablePath) {
+		if resolved, ok := existingFilePath(filepath.Join(filepath.Dir(path), DefaultConfigFileName)); ok {
+			return resolved
+		}
+	}
+	return ""
+}
+
+func ancestorDirs(path string) []string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil
+	}
+
+	dirs := make([]string, 0, 4)
+	current := path
+	seen := make(map[string]struct{})
+	for current != "" {
+		if _, ok := seen[current]; ok {
+			break
+		}
+		seen[current] = struct{}{}
+		dirs = append(dirs, current)
+		parent := filepath.Dir(current)
+		if parent == current {
+			break
+		}
+		current = parent
+	}
+	return dirs
+}
+
+func existingFilePath(path string) (string, bool) {
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() {
+		return "", false
+	}
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		return resolved, true
+	}
+	return path, true
+}
+
+func executablePathChain(path string) []string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil
+	}
+
+	chain := make([]string, 0, 4)
+	seen := make(map[string]struct{})
+	current := path
+	for current != "" {
+		if _, ok := seen[current]; ok {
+			break
+		}
+		seen[current] = struct{}{}
+		chain = append(chain, current)
+
+		target, err := os.Readlink(current)
+		if err != nil {
+			break
+		}
+		if filepath.IsAbs(target) {
+			current = target
+			continue
+		}
+		current = filepath.Join(filepath.Dir(current), target)
+	}
+	return chain
 }
 
 func isSupportedChannel(channel string) bool {

@@ -74,6 +74,42 @@ func TestParseSendDefaultsConfigPathToExecutableDirectory(t *testing.T) {
 	}
 }
 
+func TestDefaultConfigPathPrefersPublishedConfigSymlink(t *testing.T) {
+	root := t.TempDir()
+
+	configDir := filepath.Join(root, "opt", "NotiCLI", "config")
+	binDir := filepath.Join(root, "opt", "NotiCLI", "bin")
+	releaseDir := filepath.Join(root, "opt", "NotiCLI", "releases", "v1.1.0")
+	usrLocalBinDir := filepath.Join(root, "usr", "local", "bin")
+
+	for _, dir := range []string{configDir, binDir, releaseDir, usrLocalBinDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("MkdirAll(%s) error = %v", dir, err)
+		}
+	}
+
+	configPath := filepath.Join(configDir, "noticli.json")
+	if err := os.WriteFile(configPath, []byte("{}\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	if err := os.Symlink(filepath.Join(releaseDir, "noticli"), filepath.Join(binDir, "noticli")); err != nil {
+		t.Fatalf("Symlink(bin) error = %v", err)
+	}
+	if err := os.Symlink(filepath.Join(binDir, "noticli"), filepath.Join(usrLocalBinDir, "noticli")); err != nil {
+		t.Fatalf("Symlink(usrlocal) error = %v", err)
+	}
+
+	got := cli.DefaultConfigPath(filepath.Join(usrLocalBinDir, "noticli"))
+	want, err := filepath.EvalSymlinks(configPath)
+	if err != nil {
+		t.Fatalf("EvalSymlinks(config) error = %v", err)
+	}
+	if got != want {
+		t.Fatalf("DefaultConfigPath() = %q, want %q", got, want)
+	}
+}
+
 func TestParseSendRejectsEmptyExplicitConfigPath(t *testing.T) {
 	_, err := cli.ParseWithExecutablePath([]string{
 		"send",
