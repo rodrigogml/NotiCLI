@@ -131,29 +131,22 @@ func parseSend(args []string, executablePath string) (notify.Request, error) {
 
 func DefaultConfigPath(executablePath string) string {
 	for _, candidate := range candidateExecutablePaths(executablePath) {
-		if configPath := configPathInAncestorConfigDir(candidate); configPath != "" {
-			return configPath
-		}
-		if configPath := configPathBesideExecutable(candidate); configPath != "" {
-			return configPath
+		if resolved := resolvedExecutablePath(candidate); resolved != "" {
+			return filepath.Join(filepath.Dir(resolved), "config", DefaultConfigFileName)
 		}
 	}
 	if executablePath == "" {
-		return DefaultConfigFileName
+		return filepath.Join("config", DefaultConfigFileName)
 	}
-	return filepath.Join(filepath.Dir(executablePath), DefaultConfigFileName)
+	return filepath.Join(filepath.Dir(executablePath), "config", DefaultConfigFileName)
 }
 
-func configPathInAncestorConfigDir(executablePath string) string {
-	for _, path := range executablePathChain(executablePath) {
-		for _, ancestor := range ancestorDirs(filepath.Dir(path)) {
-			configPath := filepath.Join(ancestor, "config", DefaultConfigFileName)
-			if resolved, ok := existingFilePath(configPath); ok {
-				return resolved
-			}
-		}
+func resolvedExecutablePath(executablePath string) string {
+	chain := executablePathChain(executablePath)
+	if len(chain) == 0 {
+		return ""
 	}
-	return ""
+	return chain[len(chain)-1]
 }
 
 func candidateExecutablePaths(executablePath string) []string {
@@ -179,50 +172,6 @@ func candidateExecutablePaths(executablePath string) []string {
 		add(invocation)
 	}
 	return candidates
-}
-
-func configPathBesideExecutable(executablePath string) string {
-	for _, path := range executablePathChain(executablePath) {
-		if resolved, ok := existingFilePath(filepath.Join(filepath.Dir(path), DefaultConfigFileName)); ok {
-			return resolved
-		}
-	}
-	return ""
-}
-
-func ancestorDirs(path string) []string {
-	path = strings.TrimSpace(path)
-	if path == "" {
-		return nil
-	}
-
-	dirs := make([]string, 0, 4)
-	current := path
-	seen := make(map[string]struct{})
-	for current != "" {
-		if _, ok := seen[current]; ok {
-			break
-		}
-		seen[current] = struct{}{}
-		dirs = append(dirs, current)
-		parent := filepath.Dir(current)
-		if parent == current {
-			break
-		}
-		current = parent
-	}
-	return dirs
-}
-
-func existingFilePath(path string) (string, bool) {
-	info, err := os.Stat(path)
-	if err != nil || info.IsDir() {
-		return "", false
-	}
-	if resolved, err := filepath.EvalSymlinks(path); err == nil {
-		return resolved, true
-	}
-	return path, true
 }
 
 func executablePathChain(path string) []string {
@@ -343,11 +292,11 @@ Required flags:
   --message    Notification body.
 
 Optional flags:
-  --config     JSON configuration file. Defaults to noticli.json beside the executable.
+  --config     JSON configuration file. Defaults to config/noticli.json beside the resolved executable path.
   --attach     Readable file attachment. May be repeated. Supported by email only.
 
 Examples:
   noticli send --sender BackupJob --recipient ops --channel email --title "Backup failed" --message "Nightly backup failed on server-01"
-  noticli send --config /opt/NotiCLI/config/noticli.json --sender DeployBot --recipient ops --channel slack --title "Deploy complete" --message "Release completed"
+  noticli send --config /opt/NotiCLI/releases/v1.1.2/config/noticli.json --sender DeployBot --recipient ops --channel slack --title "Deploy complete" --message "Release completed"
 `, "\n")
 }

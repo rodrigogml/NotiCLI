@@ -12,8 +12,8 @@ import (
 )
 
 func TestStatePathForConfigUsesSiblingFile(t *testing.T) {
-	got := telegramtopics.StatePathForConfig(filepath.Join("opt", "NotiCLI", "config", "noticli.json"))
-	want := filepath.Join("opt", "NotiCLI", "config", "noticli.telegram-topics.json")
+	got := telegramtopics.StatePathForConfig(filepath.Join("opt", "NotiCLI", "releases", "v1.1.2", "config", "noticli.json"))
+	want := filepath.Join("opt", "NotiCLI", "releases", "v1.1.2", "config", "noticli.telegram-topics.json")
 	if got != want {
 		t.Fatalf("StatePathForConfig() = %q, want %q", got, want)
 	}
@@ -21,7 +21,7 @@ func TestStatePathForConfigUsesSiblingFile(t *testing.T) {
 
 func TestStatePathForConfigHandlesEmptyPath(t *testing.T) {
 	got := telegramtopics.StatePathForConfig("")
-	want := "noticli.telegram-topics.json"
+	want := filepath.Join("config", "noticli.telegram-topics.json")
 	if got != want {
 		t.Fatalf("StatePathForConfig(\"\") = %q, want %q", got, want)
 	}

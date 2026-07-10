@@ -10,7 +10,7 @@ Contratos de interface externa para a CLI do NotiCLI.
 
 | Field | Required | Validation | Description |
 |-------|----------|------------|-------------|
-| `--config <path>` | no | Must be readable if provided; empty explicit value is invalid | Configuration file path; when omitted, defaults to `noticli.json` in the executable directory |
+| `--config <path>` | no | Must be readable if provided; empty explicit value is invalid | Configuration file path; when omitted, defaults to `config/noticli.json` beside the resolved executable path |
 | `--sender <text>` | yes | Non-empty, max 20 characters | Calling system identifier used to compose the notification sender context |
 | `--recipient <id>` | yes | Non-empty | Configured recipient identifier |
 | `--channel <name>` | yes | One supported channel | MVP: `email`, `telegram`, `slack` |
@@ -101,7 +101,7 @@ For email channels, `settings.from_name` is optional and controls the display na
 
 For Telegram recipients, private delivery sends to `telegram_chat_id` and prefixes delivered titles as `[--sender value] --title value`. Topic delivery sends to `telegram_topic_group_chat_id`, creates or reuses one topic per sender, and sends the title without the `[--sender value]` prefix.
 
-Telegram topic associations are runtime state, not operator-authored configuration. The state file is derived from the active config path; for `/opt/NotiCLI/config/noticli.json`, it is `/opt/NotiCLI/config/noticli.telegram-topics.json`. It must be writable by the NotiCLI runtime before a topic is created and must be protected and backed up with the NotiCLI installation. Telegram Bot API does not provide complete topic listing or name lookup, so topics created outside NotiCLI may require future assisted binding. Reserved future bot commands include `/noticli_bind`, `/noticli_unbind` and `/noticli_topics`; they are outside the current MVP.
+Telegram topic associations are runtime state, not operator-authored configuration. The state file is derived from the active config path; for `config/noticli.json` beside the resolved executable path, it is `config/noticli.telegram-topics.json` in the same directory. In production, that release-local `config/` directory is symlinked to the centralized config tree, so the state file remains under `/opt/NotiCLI/config/`. It must be writable by the NotiCLI runtime before a topic is created and must be protected and backed up with the NotiCLI installation. Telegram Bot API does not provide complete topic listing or name lookup, so topics created outside NotiCLI may require future assisted binding. Reserved future bot commands include `/noticli_bind`, `/noticli_unbind` and `/noticli_topics`; they are outside the current MVP.
 
 ### MVP Required Secret Keys
 

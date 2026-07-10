@@ -24,7 +24,7 @@ Documento produzido no Phase 0 do plan. Resolve decisoes tecnicas antes do desig
 
 ## Decision 3: Runtime topic associations live in a separate local state file
 
-**Decision**: Store generated sender topic associations outside the main configuration, in a sibling file derived from the active config path. For `/opt/NotiCLI/config/noticli.json`, the state path is `/opt/NotiCLI/config/noticli.telegram-topics.json`.
+**Decision**: Store generated sender topic associations outside the main configuration, in a sibling file derived from the active config path. For `/opt/NotiCLI/releases/v1.1.2/config/noticli.json`, the state path is `/opt/NotiCLI/config/noticli.telegram-topics.json` through the release-local `config/` symlink.
 
 **Rationale**: Recipient and channel configuration is operator-authored declarative data, while `message_thread_id` mappings are generated runtime state. Separating them keeps config reviewable and avoids noisy rewrites of the config file. Deriving the state file from the active `--config` path keeps alternate config files isolated instead of sharing one global topic cache.
 

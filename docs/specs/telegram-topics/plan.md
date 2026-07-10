@@ -75,7 +75,7 @@ Extend the existing Telegram channel flow with a routing decision after recipien
 Production state path is derived from the active config path:
 
 ```text
-/opt/NotiCLI/config/noticli.json -> /opt/NotiCLI/config/noticli.telegram-topics.json
+/opt/NotiCLI/releases/v1.1.2/config/noticli.json -> /opt/NotiCLI/config/noticli.telegram-topics.json
 ```
 
 State is not part of the main recipient/channel config. It is generated operational data and should be protected with permissions equivalent to the NotiCLI runtime state owner. The config directory must allow the NotiCLI runtime group to create/replace the sibling state file. It must not contain Telegram bot tokens.

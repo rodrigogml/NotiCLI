@@ -5,7 +5,7 @@ Estado local preparado em 2026-06-28 para validar Telegram topics no ambiente de
 ## Paths
 
 ```text
-/opt/NotiCLI/config/noticli.json
+/opt/NotiCLI/releases/v1.1.2/config/noticli.json
 /opt/NotiCLI/config/noticli.telegram-topics.json
 /opt/NotiCLI/bin/noticli -> /opt/NotiCLI/testing/current/noticli
 /usr/local/bin/noticli -> /opt/NotiCLI/bin/noticli
@@ -17,6 +17,8 @@ Estado local preparado em 2026-06-28 para validar Telegram topics no ambiente de
 sudo chown root:noticli /opt/NotiCLI/config /opt/NotiCLI/config/noticli.json
 sudo chmod 0770 /opt/NotiCLI/config
 sudo chmod 0640 /opt/NotiCLI/config/noticli.json
+sudo ln -sfn /opt/NotiCLI/config /opt/NotiCLI/releases/v1.1.2/config
+sudo ln -sfn /opt/NotiCLI/config /opt/NotiCLI/testing/current/config
 ```
 
 Do not create an empty state file. If `/opt/NotiCLI/config/noticli.telegram-topics.json` is absent, NotiCLI initializes it with valid JSON on first topic-mode use. If the file is pre-created manually, it must contain valid topic state JSON and be writable by group `noticli`.
@@ -52,7 +54,7 @@ sudo python3 - <<'PY'
 import json
 from pathlib import Path
 
-path = Path('/opt/NotiCLI/config/noticli.json')
+path = Path('/opt/NotiCLI/releases/v1.1.2/config/noticli.json')
 data = json.loads(path.read_text())
 data.get('recipients', {}).pop('rodrigogml-topics', None)
 tmp = path.with_suffix('.json.tmp')

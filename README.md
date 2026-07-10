@@ -101,7 +101,7 @@ The recommended setup is to keep NotiCLI configuration centralized in the NotiCL
 
 Pass `--config <path>` only when a caller explicitly needs to replace the default configuration lookup for that execution.
 
-If `--config` is not provided, NotiCLI uses its standard configuration discovery and the shared NotiCLI config remains the source of truth.
+If `--config` is not provided, NotiCLI uses `config/noticli.json` beside the resolved executable path and the shared NotiCLI config remains the source of truth.
 
 ## Safe Diagnostics
 
@@ -118,7 +118,7 @@ Telegram requires a bot token in `channels.telegram.secrets.token`. A recipient 
 - Private chat delivery: omit `telegram_delivery_mode` or set it to `private`, and set `telegram_chat_id`. Private Telegram titles are formatted as `[sender] title`.
 - Topic group delivery: set `telegram_delivery_mode` to `topics`, set `telegram_topic_group_chat_id` to a topic-enabled supergroup ID, and optionally set `telegram_topic_group_name` for diagnostics. Topic messages use the topic as sender context, so titles are sent without the `[sender]` prefix.
 
-Topic delivery stores generated sender-topic associations in a sibling state file next to the active config. For `/opt/NotiCLI/config/noticli.json`, the state file is `/opt/NotiCLI/config/noticli.telegram-topics.json`. Back up this file with the production installation; if it is lost, NotiCLI may create replacement topics because Telegram bots cannot list or find every existing topic by name. Before creating a new topic, NotiCLI verifies that the state file can be written; write failures abort the notification with an error instead of creating an untracked topic. Future assisted commands such as `/noticli_bind`, `/noticli_unbind` and `/noticli_topics` are reserved for binding or listing manually managed topics, but they are not part of the current CLI send flow.
+Topic delivery stores generated sender-topic associations in a sibling state file next to the active config. For `config/noticli.json` beside the resolved executable path, the state file is `config/noticli.telegram-topics.json` in the same directory. In production, the release `config/` directory is symlinked to the centralized config tree, so the state file remains under `/opt/NotiCLI/config/`. Back up this file with the production installation; if it is lost, NotiCLI may create replacement topics because Telegram bots cannot list or find every existing topic by name. Before creating a new topic, NotiCLI verifies that the state file can be written; write failures abort the notification with an error instead of creating an untracked topic. Future assisted commands such as `/noticli_bind`, `/noticli_unbind` and `/noticli_topics` are reserved for binding or listing manually managed topics, but they are not part of the current CLI send flow.
 
 Slack requires an incoming webhook URL in `channels.slack.secrets.webhook_url` and a recipient `slack_destination`. The initial MVP sends text messages through the webhook only.
 

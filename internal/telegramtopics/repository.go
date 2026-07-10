@@ -14,7 +14,7 @@ import (
 
 func StatePathForConfig(configPath string) string {
 	if strings.TrimSpace(configPath) == "" {
-		configPath = "noticli.json"
+		configPath = filepath.Join("config", "noticli.json")
 	}
 	dir := filepath.Dir(configPath)
 	base := filepath.Base(configPath)

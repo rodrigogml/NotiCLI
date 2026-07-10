@@ -95,7 +95,7 @@ Topic associations are stored outside main configuration.
 Production path is derived from the active config path:
 
 ```text
-/opt/NotiCLI/config/noticli.json -> /opt/NotiCLI/config/noticli.telegram-topics.json
+/opt/NotiCLI/releases/v1.1.2/config/noticli.json -> /opt/NotiCLI/config/noticli.telegram-topics.json
 ```
 
 ### Shape

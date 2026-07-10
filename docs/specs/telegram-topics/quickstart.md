@@ -60,7 +60,7 @@ Se o estado for perdido sem backup, NotiCLI pode criar novos topicos para sender
 1. Configure a recipient with `telegram_delivery_mode` omitted or set to `private` and a valid `telegram_chat_id`.
 2. Run:
    ```sh
-   noticli send --config /opt/NotiCLI/config/noticli.json --sender BackupJob --recipient RECIPIENT_PRIVATE --channel telegram --title "Backup failed" --message "Nightly backup failed"
+   noticli send --config /opt/NotiCLI/releases/v1.1.2/config/noticli.json --sender BackupJob --recipient RECIPIENT_PRIVATE --channel telegram --title "Backup failed" --message "Nightly backup failed"
    ```
 3. **Expected**: Command exits with code `0`; recipient receives a Telegram message whose title starts with `[BackupJob] Backup failed`.
 
@@ -72,7 +72,7 @@ Se o estado for perdido sem backup, NotiCLI pode criar novos topicos para sender
 4. Ensure the topic state file has no association for sender `DeployBot`.
 5. Run:
    ```sh
-   noticli send --config /opt/NotiCLI/config/noticli.json --sender DeployBot --recipient RECIPIENT_TOPICS --channel telegram --title "Deploy complete" --message "Release completed"
+   noticli send --config /opt/NotiCLI/releases/v1.1.2/config/noticli.json --sender DeployBot --recipient RECIPIENT_TOPICS --channel telegram --title "Deploy complete" --message "Release completed"
    ```
 6. **Expected**: Command exits with code `0`; a `DeployBot` topic exists in the group; message appears inside that topic; title does not include `[DeployBot]`.
 
@@ -81,7 +81,7 @@ Se o estado for perdido sem backup, NotiCLI pode criar novos topicos para sender
 1. Complete Scenario 2 so topic state contains an association for `DeployBot`.
 2. Run another send with the same sender and recipient:
    ```sh
-   noticli send --config /opt/NotiCLI/config/noticli.json --sender DeployBot --recipient RECIPIENT_TOPICS --channel telegram --title "Deploy started" --message "Release started"
+   noticli send --config /opt/NotiCLI/releases/v1.1.2/config/noticli.json --sender DeployBot --recipient RECIPIENT_TOPICS --channel telegram --title "Deploy started" --message "Release started"
    ```
 3. **Expected**: Command exits with code `0`; message appears in the existing `DeployBot` topic; no duplicate `DeployBot` topic is intentionally created.
 
@@ -105,7 +105,7 @@ Se o estado for perdido sem backup, NotiCLI pode criar novos topicos para sender
 3. Make the known topic unusable by deleting or closing it in Telegram.
 4. Run:
    ```sh
-   noticli send --config /opt/NotiCLI/config/noticli.json --sender ProdSmoke --recipient RECIPIENT_TOPICS --channel telegram --title "Smoke test" --message "Testing stale topic recovery"
+   noticli send --config /opt/NotiCLI/releases/v1.1.2/config/noticli.json --sender ProdSmoke --recipient RECIPIENT_TOPICS --channel telegram --title "Smoke test" --message "Testing stale topic recovery"
    ```
 5. **Expected**: NotiCLI either creates a replacement topic and sends once successfully or exits with a clear Telegram delivery failure according to the implemented recovery policy. Token remains redacted.
 
