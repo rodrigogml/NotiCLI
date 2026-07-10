@@ -26,7 +26,7 @@ noticli send --config ./noticli.json --sender BackupJob --recipient ops --channe
 
 | Flag | Required | Description |
 |------|----------|-------------|
-| `--config <path>` | no | JSON configuration file. Defaults to `noticli.json` beside the executable. |
+| `--config <path>` | no | JSON configuration file override. Use only when the caller needs to override the default NotiCLI configuration. |
 | `--sender <text>` | yes | Calling system identifier, up to 20 characters. |
 | `--recipient <id>` | yes | Recipient key from the configuration file. |
 | `--channel <name>` | yes | One of `email`, `telegram` or `slack`. |
@@ -94,6 +94,14 @@ Example `noticli.json`:
 ```
 
 Secret values are redacted from user-visible diagnostics. Do not put real credentials in examples, issue reports or shared logs.
+
+## Configuration Scope
+
+The recommended setup is to keep NotiCLI configuration centralized in the NotiCLI config file and omit `--config` on callers that do not need to override it.
+
+Pass `--config <path>` only when a caller explicitly needs to replace the default configuration lookup for that execution.
+
+If `--config` is not provided, NotiCLI uses its standard configuration discovery and the shared NotiCLI config remains the source of truth.
 
 ## Safe Diagnostics
 
