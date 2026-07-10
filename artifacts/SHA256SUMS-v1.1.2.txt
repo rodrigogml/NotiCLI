@@ -1,0 +1,3 @@
+760dab0eddf7b7361de033e2df8cf147d450bf39bb6578a9cd1d00c2873b2c8d  /home/rodrigogml/projects/NotiCLI/artifacts/noticli-v1.1.2-linux-amd64.tar.gz
+c1216ed5b7491d2fc83b1d46e8fd7483bbaff7c003e4460ab8f17885612c520c  /home/rodrigogml/projects/NotiCLI/artifacts/noticli-v1.1.2-windows-amd64.exe
+6e9f878abfcc1b886185999c0742e31212476d7e85ab138f90cc25996654e714  /home/rodrigogml/projects/NotiCLI/artifacts/BUILD-INFO-v1.1.2.txt
