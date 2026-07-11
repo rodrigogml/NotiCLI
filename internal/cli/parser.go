@@ -264,6 +264,6 @@ Optional flags:
 
 Examples:
   noticli send --sender BackupJob --category backup --priority HIGH --title "Backup failed" --message "Nightly backup failed on server-01"
-  noticli send --config /opt/NotiCLI/releases/v2.0.0/config/noticli.json --sender DeployBot --title "Deploy complete" --message "Release completed"
+  noticli send --config /opt/NotiCLI/current/config/noticli.json --sender DeployBot --title "Deploy complete" --message "Release completed"
 `, "\n")
 }

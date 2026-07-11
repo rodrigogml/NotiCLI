@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.0.2 - 2026-07-11
+
+- Updated CLI usage examples to reference the stable `/opt/NotiCLI/current/config/noticli.json` production config path.
+
 ## v2.0.1 - 2026-07-11
 
 - Updated email subjects and private Telegram message titles to include priority as `[sender] [HIGH|NORMAL|LOW] title`.
