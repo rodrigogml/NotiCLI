@@ -101,6 +101,36 @@ func TestDefaultConfigPathUsesReleaseConfigDirectoryOnly(t *testing.T) {
 	}
 }
 
+func TestDefaultConfigPathDoesNotUseCallerPathWhenExecutablePathIsUnavailable(t *testing.T) {
+	root := t.TempDir()
+	fakeBinDir := filepath.Join(root, "bin")
+	fakeReleaseDir := filepath.Join(root, "opt", "NotiCLI", "releases", "poisoned")
+	for _, dir := range []string{fakeBinDir, fakeReleaseDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("MkdirAll(%s) error = %v", dir, err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(fakeReleaseDir, "noticli"), []byte{}, 0o755); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	if err := os.Symlink(filepath.Join(fakeReleaseDir, "noticli"), filepath.Join(fakeBinDir, "noticli")); err != nil {
+		t.Fatalf("Symlink() error = %v", err)
+	}
+
+	t.Setenv("PATH", fakeBinDir)
+	originalArgs := os.Args
+	os.Args = []string{"noticli"}
+	t.Cleanup(func() {
+		os.Args = originalArgs
+	})
+
+	got := cli.DefaultConfigPath("")
+	want := filepath.Join("config", cli.DefaultConfigFileName)
+	if got != want {
+		t.Fatalf("DefaultConfigPath() = %q, want %q", got, want)
+	}
+}
+
 func TestParseSendRejectsEmptyExplicitConfigPath(t *testing.T) {
 	_, err := cli.ParseWithExecutablePath([]string{
 		"send",

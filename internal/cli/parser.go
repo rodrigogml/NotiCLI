@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -130,15 +129,11 @@ func parseSend(args []string, executablePath string) (notify.Request, error) {
 }
 
 func DefaultConfigPath(executablePath string) string {
-	for _, candidate := range candidateExecutablePaths(executablePath) {
-		if resolved := resolvedExecutablePath(candidate); resolved != "" {
-			return filepath.Join(filepath.Dir(resolved), "config", DefaultConfigFileName)
-		}
-	}
-	if executablePath == "" {
+	resolved := resolvedExecutablePath(executablePath)
+	if resolved == "" {
 		return filepath.Join("config", DefaultConfigFileName)
 	}
-	return filepath.Join(filepath.Dir(executablePath), "config", DefaultConfigFileName)
+	return filepath.Join(filepath.Dir(resolved), "config", DefaultConfigFileName)
 }
 
 func resolvedExecutablePath(executablePath string) string {
@@ -147,31 +142,6 @@ func resolvedExecutablePath(executablePath string) string {
 		return ""
 	}
 	return chain[len(chain)-1]
-}
-
-func candidateExecutablePaths(executablePath string) []string {
-	candidates := make([]string, 0, 2)
-	add := func(path string) {
-		path = strings.TrimSpace(path)
-		if path == "" {
-			return
-		}
-		for _, existing := range candidates {
-			if existing == path {
-				return
-			}
-		}
-		candidates = append(candidates, path)
-	}
-
-	add(executablePath)
-	if invocation := strings.TrimSpace(os.Args[0]); invocation != "" {
-		if resolved, err := exec.LookPath(invocation); err == nil {
-			add(resolved)
-		}
-		add(invocation)
-	}
-	return candidates
 }
 
 func executablePathChain(path string) []string {

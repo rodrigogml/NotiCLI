@@ -103,6 +103,25 @@ Pass `--config <path>` only when a caller explicitly needs to replace the defaul
 
 If `--config` is not provided, NotiCLI uses `config/noticli.json` beside the resolved executable path and the shared NotiCLI config remains the source of truth.
 
+## Privileged Linux Installation
+
+For shared Linux hosts where different local users or service accounts must call NotiCLI without direct read access to the NotiCLI configuration, install the release binary under a dedicated `noticli` user and group. The release binary should be owned by `noticli:noticli` and use `setuid` plus `setgid` mode so executions run with the NotiCLI effective user and group.
+
+> [!WARNING]
+> `setuid`/`setgid` binaries increase the security impact of application bugs. Use a dedicated `noticli` user and dedicated `noticli` group only for NotiCLI, keep that account without an interactive shell, and grant it access only to the NotiCLI configuration and runtime state it needs. Do not reuse a human user, broad service account or privileged group for this installation model.
+
+The recommended production layout is:
+
+```text
+/opt/NotiCLI/releases/<version>/noticli
+/opt/NotiCLI/releases/<version>/config -> /opt/NotiCLI/config
+/opt/NotiCLI/current -> /opt/NotiCLI/releases/<version>
+/opt/NotiCLI/bin/noticli -> /opt/NotiCLI/current/noticli
+/usr/local/bin/noticli -> /opt/NotiCLI/bin/noticli
+```
+
+Keep `/opt/NotiCLI/config` owned by `root:noticli` with no access for other users. The symlink permissions are not the access boundary; the release binary owner/mode and the target config directory permissions are what enforce access.
+
 ## Safe Diagnostics
 
 Failures are written as one-line diagnostics containing a stable category and, when applicable, the affected channel. NotiCLI redacts configured secret values and common credential patterns such as tokens, passwords, bearer credentials and Slack webhook URLs.
