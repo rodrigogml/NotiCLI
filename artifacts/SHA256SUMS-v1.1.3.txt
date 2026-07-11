@@ -1,0 +1,3 @@
+228aaeb9560d94850d659039ee90be9874fcddd34bfbd8acac07982750bfe498  artifacts/noticli-v1.1.3-linux-amd64.tar.gz
+45778cfa5f7a0cd0dc119a87157832349c56ec4c6318d3ce1de726be2276f5ad  artifacts/noticli-v1.1.3-windows-amd64.exe
+9000369d1ec2623fb89c23518e8599471a688824fa075ac096e670374231acc2  artifacts/BUILD-INFO-v1.1.3.txt
