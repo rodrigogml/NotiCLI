@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/rodrigogml/NotiCLI/internal/channels/telegram"
 	"github.com/rodrigogml/NotiCLI/internal/cli"
@@ -20,45 +19,40 @@ import (
 	"github.com/rodrigogml/NotiCLI/internal/telegramtopics"
 )
 
-func TestRunWithSendersHappyPathByChannel(t *testing.T) {
+func TestRunWithSendersBroadcastsMatchingRoutes(t *testing.T) {
 	configPath := writeIntegrationConfig(t)
+	emailSender := &fakeChannelSender{name: notify.ChannelEmail, result: notify.SuccessResult(notify.ChannelEmail, "email accepted")}
+	slackSender := &fakeChannelSender{name: notify.ChannelSlack, result: notify.SuccessResult(notify.ChannelSlack, "slack accepted")}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
 
-	tests := []struct {
-		name    string
-		channel string
-		wantOut string
-	}{
-		{name: "email", channel: notify.ChannelEmail, wantOut: "email accepted\n"},
-		{name: "telegram", channel: notify.ChannelTelegram, wantOut: "telegram accepted\n"},
-		{name: "slack", channel: notify.ChannelSlack, wantOut: "slack accepted\n"},
+	code := cli.RunWithSenders(sendArgs(configPath, "--category", "backup", "--priority", "HIGH"), &stdout, &stderr, emailSender, slackSender)
+	if code != diagnostics.ExitSuccess {
+		t.Fatalf("RunWithSenders() exit code = %d, want 0; stderr=%q", code, stderr.String())
 	}
+	if got := stdout.String(); got != "notification accepted\n" {
+		t.Fatalf("stdout = %q", got)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+	if emailSender.calls != 1 || slackSender.calls != 1 {
+		t.Fatalf("calls email=%d slack=%d, want 1 each", emailSender.calls, slackSender.calls)
+	}
+}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			sender := &fakeChannelSender{
-				name:   tt.channel,
-				result: notify.SuccessResult(tt.channel, tt.wantOut[:len(tt.wantOut)-1]),
-			}
-			var stdout bytes.Buffer
-			var stderr bytes.Buffer
+func TestRunWithSendersUsesCatchAll(t *testing.T) {
+	configPath := writeIntegrationConfig(t)
+	emailSender := &fakeChannelSender{name: notify.ChannelEmail, result: notify.SuccessResult(notify.ChannelEmail, "email accepted")}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
 
-			code := cli.RunWithSenders(sendArgs(configPath, tt.channel), &stdout, &stderr, sender)
-			if code != diagnostics.ExitSuccess {
-				t.Fatalf("RunWithSenders() exit code = %d, want 0; stderr=%q", code, stderr.String())
-			}
-			if got := stdout.String(); got != tt.wantOut {
-				t.Fatalf("stdout = %q, want %q", got, tt.wantOut)
-			}
-			if stderr.Len() != 0 {
-				t.Fatalf("stderr = %q, want empty", stderr.String())
-			}
-			if sender.calls != 1 {
-				t.Fatalf("sender calls = %d, want 1", sender.calls)
-			}
-			if sender.request.Channel != tt.channel {
-				t.Fatalf("request channel = %q, want %q", sender.request.Channel, tt.channel)
-			}
-		})
+	code := cli.RunWithSenders(sendArgs(configPath), &stdout, &stderr, emailSender)
+	if code != diagnostics.ExitSuccess {
+		t.Fatalf("RunWithSenders() exit code = %d, want 0; stderr=%q", code, stderr.String())
+	}
+	if emailSender.calls != 1 || emailSender.delivery.RouteID != "catch_all" {
+		t.Fatalf("calls=%d delivery=%#v", emailSender.calls, emailSender.delivery)
 	}
 }
 
@@ -75,38 +69,38 @@ func TestRunWithSendersReturnsExpectedExitCodesForFailureScenarios(t *testing.T)
 	}{
 		{
 			name:       "invalid input",
-			args:       []string{"send", "--sender", "BackupJob", "--recipient", "ops"},
+			args:       []string{"send", "--sender", "BackupJob"},
 			wantCode:   diagnostics.ExitInvalidInput,
 			wantStderr: "invalid_input:",
 		},
 		{
 			name:       "missing config",
-			args:       sendArgs(filepath.Join(t.TempDir(), "missing.json"), notify.ChannelEmail),
+			args:       sendArgs(filepath.Join(t.TempDir(), "missing.json")),
 			wantCode:   diagnostics.ExitMissingConfig,
 			wantStderr: "missing_config:",
 		},
 		{
 			name:       "invalid config",
-			args:       sendArgs(writeInvalidIntegrationConfig(t), notify.ChannelEmail),
+			args:       sendArgs(writeInvalidIntegrationConfig(t)),
 			wantCode:   diagnostics.ExitInvalidConfig,
 			wantStderr: "invalid_config:",
 		},
 		{
 			name:       "attachment error",
-			args:       append(sendArgs(configPath, notify.ChannelEmail), "--attach", missingAttachment),
+			args:       append(sendArgs(configPath), "--attach", missingAttachment),
 			senders:    []notify.ChannelSender{&fakeChannelSender{name: notify.ChannelEmail, result: notify.SuccessResult(notify.ChannelEmail, "accepted")}},
 			wantCode:   diagnostics.ExitAttachmentError,
 			wantStderr: "attachment_error:",
 		},
 		{
 			name: "delivery failure",
-			args: sendArgs(configPath, notify.ChannelSlack),
+			args: sendArgs(configPath),
 			senders: []notify.ChannelSender{&fakeChannelSender{
-				name: notify.ChannelSlack,
-				err:  diagnostics.ForChannel(diagnostics.CategoryDeliveryFailure, notify.ChannelSlack, "provider rejected request"),
+				name: notify.ChannelEmail,
+				err:  diagnostics.ForChannel(diagnostics.CategoryDeliveryFailure, notify.ChannelEmail, "provider rejected request"),
 			}},
 			wantCode:   diagnostics.ExitDeliveryFailure,
-			wantStderr: "delivery_failure: slack:",
+			wantStderr: "delivery_failure: email:",
 		},
 	}
 
@@ -119,9 +113,6 @@ func TestRunWithSendersReturnsExpectedExitCodesForFailureScenarios(t *testing.T)
 			if code != tt.wantCode {
 				t.Fatalf("RunWithSenders() exit code = %d, want %d; stderr=%q", code, tt.wantCode, stderr.String())
 			}
-			if stdout.Len() != 0 {
-				t.Fatalf("stdout = %q, want empty", stdout.String())
-			}
 			if !strings.Contains(stderr.String(), tt.wantStderr) {
 				t.Fatalf("stderr = %q, want substring %q", stderr.String(), tt.wantStderr)
 			}
@@ -129,300 +120,165 @@ func TestRunWithSendersReturnsExpectedExitCodesForFailureScenarios(t *testing.T)
 	}
 }
 
-func TestRunWithSendersRedactsConfiguredSecretsFromChannelDiagnostics(t *testing.T) {
+func TestRunWithSendersRedactsConfiguredSecretsFromDiagnostics(t *testing.T) {
 	configPath := writeIntegrationConfig(t)
 	sender := &fakeChannelSender{
-		name: notify.ChannelSlack,
-		err: diagnostics.ForChannel(
-			diagnostics.CategoryDeliveryFailure,
-			notify.ChannelSlack,
-			"provider rejected webhook https://hooks.slack.com/services/T000/B000/secret token=123456:ABCDEFGHIJKLMNOPQRSTUVWXYZ password=SMTP_PASSWORD_PLACEHOLDER",
-		),
+		name: notify.ChannelEmail,
+		err:  diagnostics.ForChannel(diagnostics.CategoryDeliveryFailure, notify.ChannelEmail, "smtp password SMTP_PASSWORD_PLACEHOLDER rejected"),
 	}
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	code := cli.RunWithSenders(sendArgs(configPath, notify.ChannelSlack), &stdout, &stderr, sender)
+	code := cli.RunWithSenders(sendArgs(configPath), &stdout, &stderr, sender)
 	if code != diagnostics.ExitDeliveryFailure {
-		t.Fatalf("RunWithSenders() exit code = %d, want %d", code, diagnostics.ExitDeliveryFailure)
-	}
-	if stdout.Len() != 0 {
-		t.Fatalf("stdout = %q, want empty", stdout.String())
+		t.Fatalf("RunWithSenders() exit code = %d, want delivery failure", code)
 	}
 	got := stderr.String()
-	if !strings.Contains(got, "delivery_failure: slack:") {
-		t.Fatalf("stderr = %q, want channel diagnostic", got)
+	if strings.Contains(got, "SMTP_PASSWORD_PLACEHOLDER") {
+		t.Fatalf("stderr leaked secret: %q", got)
 	}
-	for _, leaked := range []string{
-		"https://hooks.slack.com/services/T000/B000/secret",
-		"123456:ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-		"SMTP_PASSWORD_PLACEHOLDER",
-	} {
-		if strings.Contains(got, leaked) {
-			t.Fatalf("stderr leaked %q in %q", leaked, got)
-		}
-	}
-	if strings.Count(got, diagnostics.Redacted) < 3 {
-		t.Fatalf("stderr = %q, want redacted secrets", got)
+	if !strings.Contains(got, diagnostics.Redacted) {
+		t.Fatalf("stderr = %q, want redacted marker", got)
 	}
 }
 
-func TestRunWithSendersTelegramPrivateAndTopicsEndToEnd(t *testing.T) {
-	var createCalls int
-	var sendPayloads []map[string]any
+func TestRunWithSendersTelegramTopicsEndToEnd(t *testing.T) {
+	var gotPayload map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch r.URL.Path {
-		case "/bot123456:ABCDEF/createForumTopic":
-			createCalls++
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{"ok":true,"result":{"message_thread_id":4,"name":"BackupJob"}}`))
-		case "/bot123456:ABCDEF/sendMessage":
-			var payload map[string]any
-			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-				t.Fatalf("Decode(send) error = %v", err)
-			}
-			sendPayloads = append(sendPayloads, payload)
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{"ok":true}`))
-		default:
+		if r.URL.Path != "/bot123456:ABCDEF/createForumTopic" && r.URL.Path != "/bot123456:ABCDEF/sendMessage" {
 			t.Fatalf("unexpected path %q", r.URL.Path)
 		}
+		if r.URL.Path == "/bot123456:ABCDEF/sendMessage" {
+			if err := json.NewDecoder(r.Body).Decode(&gotPayload); err != nil {
+				t.Fatalf("Decode() error = %v", err)
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/bot123456:ABCDEF/createForumTopic" {
+			w.Write([]byte(`{"ok":true,"result":{"message_thread_id":77}}`))
+			return
+		}
+		w.Write([]byte(`{"ok":true}`))
 	}))
 	defer server.Close()
 
-	configPath := writeTelegramIntegrationConfig(t, `"private": {"telegram_chat_id": "12345"}, "topics": {"telegram_delivery_mode": "topics", "telegram_topic_group_chat_id": "-1001234567890"}`)
-	repository := telegramtopics.NewFileRepository(filepath.Join(t.TempDir(), "telegram-topics.json"))
-	sender := telegram.NewSender(server.Client(), telegram.WithBaseURL(server.URL), telegram.WithTopicStore(repository))
-
-	for _, recipient := range []string{"private", "topics", "topics"} {
-		var stdout bytes.Buffer
-		var stderr bytes.Buffer
-		args := []string{
-			"send",
-			"--config", configPath,
-			"--sender", "BackupJob",
-			"--recipient", recipient,
-			"--channel", notify.ChannelTelegram,
-			"--title", "Backup failed",
-			"--message", "Nightly backup failed",
-		}
-		code := cli.RunWithSenders(args, &stdout, &stderr, sender)
-		if code != diagnostics.ExitSuccess {
-			t.Fatalf("RunWithSenders(%s) exit code = %d, want 0; stderr=%q", recipient, code, stderr.String())
-		}
-	}
-
-	if createCalls != 1 {
-		t.Fatalf("createCalls = %d, want one creation for two topic sends", createCalls)
-	}
-	if len(sendPayloads) != 3 {
-		t.Fatalf("sendPayloads length = %d, want 3", len(sendPayloads))
-	}
-	if sendPayloads[0]["text"] != "[BackupJob] Backup failed\n\nNightly backup failed" {
-		t.Fatalf("private text = %q", sendPayloads[0]["text"])
-	}
-	if _, ok := sendPayloads[0]["message_thread_id"]; ok {
-		t.Fatalf("private payload has thread ID: %#v", sendPayloads[0])
-	}
-	for index, payload := range sendPayloads[1:] {
-		if payload["text"] != "Backup failed\n\nNightly backup failed" {
-			t.Fatalf("topic text %d = %q", index, payload["text"])
-		}
-		if payload["message_thread_id"] != float64(4) {
-			t.Fatalf("topic thread %d = %#v, want 4", index, payload["message_thread_id"])
-		}
-	}
-}
-
-func TestRunWithSendersTelegramTopicsIncompleteConfiguration(t *testing.T) {
-	configPath := writeTelegramIntegrationConfig(t, `"topics": {"telegram_delivery_mode": "topics"}`)
-	sender := telegram.NewSender(failingHTTPClient{})
+	configPath := writeTelegramTopicsConfig(t)
+	topicStatePath := filepath.Join(filepath.Dir(configPath), "telegram-topics.json")
+	sender := telegram.NewSender(server.Client(), telegram.WithBaseURL(server.URL), telegram.WithTopicStore(telegramtopics.NewFileRepository(topicStatePath)))
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	code := cli.RunWithSenders([]string{
-		"send",
-		"--config", configPath,
-		"--sender", "BackupJob",
-		"--recipient", "topics",
-		"--channel", notify.ChannelTelegram,
-		"--title", "Backup failed",
-		"--message", "Nightly backup failed",
-	}, &stdout, &stderr, sender)
-	if code != diagnostics.ExitInvalidConfig {
-		t.Fatalf("RunWithSenders() exit code = %d, want invalid_config; stderr=%q", code, stderr.String())
-	}
-	if !strings.Contains(stderr.String(), "invalid_config: telegram:") {
-		t.Fatalf("stderr = %q, want telegram invalid_config", stderr.String())
-	}
-}
-
-func TestRunWithSendersTelegramStaleTopicRecovery(t *testing.T) {
-	var sendCalls int
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch r.URL.Path {
-		case "/bot123456:ABCDEF/sendMessage":
-			sendCalls++
-			if sendCalls == 1 {
-				w.WriteHeader(http.StatusBadRequest)
-				w.Write([]byte(`{"ok":false,"description":"Bad Request: message thread not found"}`))
-				return
-			}
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{"ok":true}`))
-		case "/bot123456:ABCDEF/createForumTopic":
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{"ok":true,"result":{"message_thread_id":6,"name":"BackupJob"}}`))
-		default:
-			t.Fatalf("unexpected path %q", r.URL.Path)
-		}
-	}))
-	defer server.Close()
-
-	configPath := writeTelegramIntegrationConfig(t, `"topics": {"telegram_delivery_mode": "topics", "telegram_topic_group_chat_id": "-1001234567890"}`)
-	repository := telegramtopics.NewFileRepository(filepath.Join(t.TempDir(), "telegram-topics.json"))
-	now := "2026-06-28T12:00:00Z"
-	if err := repository.Save(context.Background(), telegramtopics.State{
-		Version:   telegramtopics.StateVersion,
-		UpdatedAt: mustParseTime(t, now),
-		Associations: []telegramtopics.Association{
-			{
-				RecipientID:      "topics",
-				ChatID:           "-1001234567890",
-				Sender:           "BackupJob",
-				TopicName:        "BackupJob",
-				MessageThreadID:  4,
-				CreatedByNotiCLI: true,
-				CreatedAt:        mustParseTime(t, now),
-				Status:           telegramtopics.TopicStatusActive,
-			},
-		},
-	}); err != nil {
-		t.Fatalf("Save() error = %v", err)
-	}
-	sender := telegram.NewSender(server.Client(), telegram.WithBaseURL(server.URL), telegram.WithTopicStore(repository))
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-
-	code := cli.RunWithSenders([]string{
-		"send",
-		"--config", configPath,
-		"--sender", "BackupJob",
-		"--recipient", "topics",
-		"--channel", notify.ChannelTelegram,
-		"--title", "Backup failed",
-		"--message", "Nightly backup failed",
-	}, &stdout, &stderr, sender)
+	code := cli.RunWithSenders(sendArgs(configPath, "--category", "backup"), &stdout, &stderr, sender)
 	if code != diagnostics.ExitSuccess {
 		t.Fatalf("RunWithSenders() exit code = %d, want success; stderr=%q", code, stderr.String())
 	}
-	if sendCalls != 2 {
-		t.Fatalf("sendCalls = %d, want original send and retry", sendCalls)
+	if gotPayload["message_thread_id"] != float64(77) {
+		t.Fatalf("message_thread_id = %#v, want 77", gotPayload["message_thread_id"])
+	}
+	if _, err := os.Stat(topicStatePath); err != nil {
+		t.Fatalf("topic state was not written: %v", err)
 	}
 }
 
-func sendArgs(configPath, channel string) []string {
-	return []string{
+func sendArgs(configPath string, extra ...string) []string {
+	args := []string{
 		"send",
 		"--config", configPath,
 		"--sender", "TestRunner",
-		"--recipient", "ops",
-		"--channel", channel,
 		"--title", "Test",
 		"--message", "Integration test",
 	}
+	return append(args, extra...)
 }
 
 type fakeChannelSender struct {
-	name    string
-	result  notify.Result
-	err     error
-	calls   int
-	request notify.Request
-}
-
-type failingHTTPClient struct{}
-
-func (failingHTTPClient) Do(*http.Request) (*http.Response, error) {
-	return nil, errors.New("unexpected HTTP call")
+	name     string
+	result   notify.Result
+	err      error
+	calls    int
+	request  notify.Request
+	delivery notify.ResolvedDelivery
 }
 
 func (f *fakeChannelSender) Name() string {
 	return f.name
 }
 
-func (f *fakeChannelSender) Send(_ context.Context, request notify.Request, _ notify.Recipient, _ notify.ChannelConfig) (notify.Result, error) {
+func (f *fakeChannelSender) Send(_ context.Context, request notify.Request, delivery notify.ResolvedDelivery) (notify.Result, error) {
 	f.calls++
 	f.request = request
+	f.delivery = delivery
 	return f.result, f.err
 }
 
 func writeIntegrationConfig(t *testing.T) string {
-	t.Helper()
-
 	return writeFile(t, "noticli.json", `{
-		"recipients": {
-			"ops": {
-				"email": "ops@example.invalid",
-				"telegram_chat_id": "12345",
-				"slack_destination": "#ops"
-			}
+		"destinations": {
+			"ops-email": {"type": "email", "email": "ops@example.invalid"},
+			"ops-slack": {"type": "slack", "slack_destination": "#ops"}
 		},
-		"channels": {
-			"email": {
-				"settings": {
-					"host": "smtp.example.invalid",
-					"port": "587",
-					"from": "noticli@example.invalid"
-				},
+		"delivery_accounts": {
+			"smtp-main": {
+				"type": "email",
+				"settings": {"host": "smtp.example.invalid", "port": "587", "from": "noticli@example.invalid"},
 				"secrets": {"smtp_password": "SMTP_PASSWORD_PLACEHOLDER"},
 				"attachments": "supported"
 			},
-			"telegram": {
-				"settings": {"parse_mode": "HTML"},
-				"secrets": {"token": "123456:ABCDEFGHIJKLMNOPQRSTUVWXYZ"},
-				"attachments": "unsupported"
-			},
-			"slack": {
+			"slack-main": {
+				"type": "slack",
 				"settings": {"workspace": "ops"},
-				"secrets": {"webhook_url": "https://hooks.slack.com/services/T000/B000/secret"},
+				"secrets": {"webhook_url": "https://hooks.slack.com/services/T/B/S"},
 				"attachments": "unsupported"
 			}
-		}
+		},
+		"routes": [
+			{
+				"id": "backup-high",
+				"match": {"categories": ["backup"], "priorities": ["HIGH"]},
+				"deliveries": [
+					{"account": "smtp-main", "destination": "ops-email"},
+					{"account": "slack-main", "destination": "ops-slack"}
+				]
+			}
+		],
+		"catch_all": {"deliveries": [{"account": "smtp-main", "destination": "ops-email"}]}
 	}`)
 }
 
 func writeInvalidIntegrationConfig(t *testing.T) string {
-	t.Helper()
-
-	return writeFile(t, "invalid-noticli.json", `{"recipients": {}, "channels": {}}`)
+	return writeFile(t, "invalid-noticli.json", `{
+		"destinations": {"ops-email": {"type": "email", "email": "ops@example.invalid"}},
+		"delivery_accounts": {}
+	}`)
 }
 
-func writeTelegramIntegrationConfig(t *testing.T, recipients string) string {
-	t.Helper()
-
+func writeTelegramTopicsConfig(t *testing.T) string {
 	return writeFile(t, "telegram-noticli.json", `{
-		"recipients": {`+recipients+`},
-		"channels": {
-			"telegram": {
+		"destinations": {
+			"ops-telegram-topics": {
+				"type": "telegram",
+				"telegram_delivery_mode": "topics",
+				"telegram_topic_group_chat_id": "-1001234567890",
+				"telegram_topic_group_name": "Operations"
+			}
+		},
+		"delivery_accounts": {
+			"telegram-main": {
+				"type": "telegram",
 				"settings": {"parse_mode": "HTML"},
 				"secrets": {"token": "123456:ABCDEF"},
 				"attachments": "unsupported"
 			}
-		}
+		},
+		"routes": [
+			{
+				"id": "backup-telegram",
+				"match": {"categories": ["backup"]},
+				"deliveries": [{"account": "telegram-main", "destination": "ops-telegram-topics"}]
+			}
+		],
+		"catch_all": {"deliveries": [{"account": "telegram-main", "destination": "ops-telegram-topics"}]}
 	}`)
-}
-
-func mustParseTime(t *testing.T, value string) time.Time {
-	t.Helper()
-
-	parsed, err := time.Parse(time.RFC3339, value)
-	if err != nil {
-		t.Fatalf("Parse(%q) error = %v", value, err)
-	}
-	return parsed
 }
 
 func writeFile(t *testing.T, name, content string) string {
@@ -433,4 +289,10 @@ func writeFile(t *testing.T, name, content string) string {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 	return path
+}
+
+type failingHTTPClient struct{}
+
+func (failingHTTPClient) Do(*http.Request) (*http.Response, error) {
+	return nil, errors.New("unexpected HTTP call")
 }

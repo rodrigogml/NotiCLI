@@ -34,7 +34,7 @@ func TestSendPostsMessageToSlackWebhook(t *testing.T) {
 	config := validConfig()
 	config.Secrets[secretWebhookURL] = server.URL
 
-	result, err := NewSender(server.Client()).Send(context.Background(), validRequest(), validRecipient(), config)
+	result, err := NewSender(server.Client()).Send(context.Background(), validRequest(), validDelivery(config))
 	if err != nil {
 		t.Fatalf("Send() error = %v", err)
 	}
@@ -53,7 +53,7 @@ func TestSendReturnsInvalidConfigForMissingWebhookOrDestination(t *testing.T) {
 	config := validConfig()
 	delete(config.Secrets, secretWebhookURL)
 
-	result, err := NewSender(nil).Send(context.Background(), validRequest(), validRecipient(), config)
+	result, err := NewSender(nil).Send(context.Background(), validRequest(), validDelivery(config))
 	if err == nil {
 		t.Fatal("Send() error = nil, want invalid_config")
 	}
@@ -64,7 +64,7 @@ func TestSendReturnsInvalidConfigForMissingWebhookOrDestination(t *testing.T) {
 
 	recipient := validRecipient()
 	recipient.SlackDest = ""
-	_, err = NewSender(nil).Send(context.Background(), validRequest(), recipient, validConfig())
+	_, err = NewSender(nil).Send(context.Background(), validRequest(), validDeliveryWithDestination(recipient))
 	assertDiagnosticCategory(t, err, diagnostics.CategoryInvalidConfig)
 }
 
@@ -72,7 +72,7 @@ func TestSendReturnsInvalidConfigForInvalidWebhookURL(t *testing.T) {
 	config := validConfig()
 	config.Secrets[secretWebhookURL] = "not a url"
 
-	_, err := NewSender(nil).Send(context.Background(), validRequest(), validRecipient(), config)
+	_, err := NewSender(nil).Send(context.Background(), validRequest(), validDelivery(config))
 	assertDiagnosticCategory(t, err, diagnostics.CategoryInvalidConfig)
 }
 
@@ -86,7 +86,7 @@ func TestSendMapsProviderHTTPFailureToDeliveryFailureWithoutLeakingWebhook(t *te
 	config := validConfig()
 	config.Secrets[secretWebhookURL] = server.URL + "/services/T000/B000/secret"
 
-	result, err := NewSender(server.Client()).Send(context.Background(), validRequest(), validRecipient(), config)
+	result, err := NewSender(server.Client()).Send(context.Background(), validRequest(), validDelivery(config))
 	if err == nil {
 		t.Fatal("Send() error = nil, want delivery_failure")
 	}
@@ -109,7 +109,7 @@ func TestSendMapsProviderNonOKBodyToDeliveryFailure(t *testing.T) {
 	config := validConfig()
 	config.Secrets[secretWebhookURL] = server.URL
 
-	result, err := NewSender(server.Client()).Send(context.Background(), validRequest(), validRecipient(), config)
+	result, err := NewSender(server.Client()).Send(context.Background(), validRequest(), validDelivery(config))
 	if err == nil {
 		t.Fatal("Send() error = nil, want delivery_failure")
 	}
@@ -120,7 +120,7 @@ func TestSendMapsProviderNonOKBodyToDeliveryFailure(t *testing.T) {
 }
 
 func TestSendMapsClientFailureToDeliveryFailureWithoutLeakingWebhook(t *testing.T) {
-	result, err := NewSender(failingClient{}).Send(context.Background(), validRequest(), validRecipient(), validConfig())
+	result, err := NewSender(failingClient{}).Send(context.Background(), validRequest(), validDelivery(validConfig()))
 	if err == nil {
 		t.Fatal("Send() error = nil, want delivery_failure")
 	}
@@ -134,7 +134,7 @@ func TestSendReturnsAttachmentErrorWhenAttachmentsAreRequested(t *testing.T) {
 	request := validRequest()
 	request.Attachments = []notify.Attachment{{Path: filepath.Join("tmp", "report.txt"), Filename: "report.txt"}}
 
-	result, err := NewSender(failingClient{}).Send(context.Background(), request, validRecipient(), validConfig())
+	result, err := NewSender(failingClient{}).Send(context.Background(), request, validDelivery(validConfig()))
 	if err == nil {
 		t.Fatal("Send() error = nil, want attachment_error")
 	}
@@ -153,23 +153,24 @@ func (failingClient) Do(*http.Request) (*http.Response, error) {
 func validRequest() notify.Request {
 	return notify.Request{
 		SenderSystem: "DeployBot",
-		RecipientID:  "ops",
-		Channel:      notify.ChannelSlack,
+		Priority:     notify.PriorityNormal,
 		Title:        "Deploy complete",
 		Message:      "Release finished",
 	}
 }
 
-func validRecipient() notify.Recipient {
-	return notify.Recipient{
+func validRecipient() notify.Destination {
+	return notify.Destination{
 		ID:        "ops",
+		Type:      notify.ChannelSlack,
 		SlackDest: "#ops",
 		Enabled:   true,
 	}
 }
 
-func validConfig() notify.ChannelConfig {
-	return notify.ChannelConfig{
+func validConfig() notify.DeliveryAccount {
+	return notify.DeliveryAccount{
+		ID:      "slack-main",
 		Type:    notify.ChannelSlack,
 		Enabled: true,
 		Settings: map[string]string{
@@ -179,6 +180,24 @@ func validConfig() notify.ChannelConfig {
 			secretWebhookURL: "https://hooks.slack.com/services/T000/B000/secret",
 		},
 		AttachmentPolicy: notify.AttachmentPolicyUnsupported,
+	}
+}
+
+func validDelivery(account notify.DeliveryAccount) notify.ResolvedDelivery {
+	return resolvedDelivery(validRecipient(), account)
+}
+
+func validDeliveryWithDestination(destination notify.Destination) notify.ResolvedDelivery {
+	return resolvedDelivery(destination, validConfig())
+}
+
+func resolvedDelivery(destination notify.Destination, account notify.DeliveryAccount) notify.ResolvedDelivery {
+	return notify.ResolvedDelivery{
+		RouteID:       "deploy",
+		AccountID:     account.ID,
+		DestinationID: destination.ID,
+		Account:       account,
+		Destination:   destination,
 	}
 }
 

@@ -34,12 +34,12 @@ func (Sender) Name() string {
 	return notify.ChannelSlack
 }
 
-func (s Sender) Send(ctx context.Context, request notify.Request, recipient notify.Recipient, config notify.ChannelConfig) (notify.Result, error) {
+func (s Sender) Send(ctx context.Context, request notify.Request, delivery notify.ResolvedDelivery) (notify.Result, error) {
 	if len(request.Attachments) > 0 {
 		err := diagnostics.ForChannel(diagnostics.CategoryAttachmentError, notify.ChannelSlack, "attachments are not supported for channel")
 		return notify.FailureResult(err.Category, err.Channel, err.Message), err
 	}
-	message, err := buildMessage(request, recipient, config)
+	message, err := buildMessage(request, delivery.Destination, delivery.Account)
 	if err != nil {
 		return notify.FailureResult(diagnostics.CategoryInvalidConfig, notify.ChannelSlack, diagnostics.FromError(err).Message), err
 	}
@@ -62,7 +62,7 @@ type Message struct {
 	Text       string
 }
 
-func buildMessage(request notify.Request, recipient notify.Recipient, config notify.ChannelConfig) (Message, error) {
+func buildMessage(request notify.Request, destination notify.Destination, config notify.DeliveryAccount) (Message, error) {
 	if config.Type != notify.ChannelSlack {
 		return Message{}, invalidConfig("channel config type must be slack")
 	}
@@ -78,14 +78,14 @@ func buildMessage(request notify.Request, recipient notify.Recipient, config not
 		return Message{}, invalidConfig(fmt.Sprintf("required secret %q must be an HTTP URL", secretWebhookURL))
 	}
 
-	destination, ok := recipient.DestinationFor(notify.ChannelSlack)
+	dest, ok := destination.Address()
 	if !ok {
-		return Message{}, invalidConfig("recipient has no slack destination")
+		return Message{}, invalidConfig("destination has no slack destination")
 	}
 
 	return Message{
 		WebhookURL: webhookURL,
-		Dest:       destination,
+		Dest:       dest,
 		Text:       formatText(request),
 	}, nil
 }

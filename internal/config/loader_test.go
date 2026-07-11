@@ -12,166 +12,117 @@ import (
 	"github.com/rodrigogml/NotiCLI/internal/notify"
 )
 
-func TestLoadReadsValidJSONConfiguration(t *testing.T) {
+func TestLoadReadsValidBroadcastConfiguration(t *testing.T) {
 	path := writeTempConfig(t, `{
-		"recipients": {
-			"ops": {
-				"name": "Operations",
-				"email": "ops@example.com",
-				"telegram_chat_id": "12345",
-				"slack_destination": "#ops"
-			},
-			"dev": {
-				"id": "dev-team",
-				"email": "dev@example.com",
-				"enabled": false
+		"destinations": {
+			"ops-email": {"type": "email", "email": "ops@example.com"},
+			"ops-telegram-thread": {
+				"type": "telegram",
+				"telegram_delivery_mode": "thread",
+				"telegram_topic_group_chat_id": "-1001234567890",
+				"message_thread_id": 42
 			}
 		},
-		"channels": {
-			"email": {
-				"settings": {"from": "noticli@example.com", "host": "smtp.example.com"},
+		"delivery_accounts": {
+			"smtp-main": {
+				"type": "email",
+				"settings": {"from": "noticli@example.com", "host": "smtp.example.com", "port": "587"},
 				"secrets": {"smtp_password": "secret"},
 				"attachments": "supported"
 			},
-			"telegram": {
+			"telegram-main": {
 				"type": "telegram",
-				"settings": {"parse_mode": "plain"},
-				"secrets": {"token": "secret"},
-				"attachments": "limited"
+				"settings": {"parse_mode": "HTML"},
+				"secrets": {"token": "123456:ABCDEF"},
+				"attachments": "unsupported"
 			}
 		},
-		"defaults": {"channel": "email"}
+		"routes": [
+			{
+				"id": "backup-high",
+				"match": {"senders": ["BackupJob"], "categories": ["backup"], "priorities": ["HIGH"]},
+				"deliveries": [
+					{"account": "smtp-main", "destination": "ops-email"},
+					{"account": "telegram-main", "destination": "ops-telegram-thread"}
+				]
+			}
+		],
+		"catch_all": {"deliveries": [{"account": "smtp-main", "destination": "ops-email"}]},
+		"logging": {"path": "/tmp/noticli.log"}
 	}`)
 
 	configuration, err := config.Load(path)
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-
-	ops := configuration.Recipients["ops"]
-	if ops.ID != "ops" {
-		t.Fatalf("ops.ID = %q, want ops", ops.ID)
+	if configuration.Destinations["ops-email"].ID != "ops-email" {
+		t.Fatalf("destination ID = %q", configuration.Destinations["ops-email"].ID)
 	}
-	if !ops.Enabled {
-		t.Fatal("ops.Enabled = false, want true default")
+	if configuration.DeliveryAccounts["smtp-main"].AttachmentPolicy != notify.AttachmentPolicySupported {
+		t.Fatalf("smtp attachment policy = %q", configuration.DeliveryAccounts["smtp-main"].AttachmentPolicy)
 	}
-	if got := ops.EffectiveTelegramDeliveryMode(); got != notify.TelegramDeliveryModePrivate {
-		t.Fatalf("ops telegram delivery mode = %q, want private default", got)
+	if configuration.Routes[0].ID != "backup-high" {
+		t.Fatalf("route ID = %q", configuration.Routes[0].ID)
 	}
-	if ops.TelegramChatID != "12345" {
-		t.Fatalf("ops.TelegramChatID = %q, want 12345", ops.TelegramChatID)
-	}
-	dev := configuration.Recipients["dev"]
-	if dev.ID != "dev-team" {
-		t.Fatalf("dev.ID = %q, want dev-team", dev.ID)
-	}
-	if dev.Enabled {
-		t.Fatal("dev.Enabled = true, want false")
-	}
-
-	email := configuration.Channels[notify.ChannelEmail]
-	if !email.Enabled {
-		t.Fatal("email.Enabled = false, want true default")
-	}
-	if email.Type != notify.ChannelEmail {
-		t.Fatalf("email.Type = %q", email.Type)
-	}
-	if email.AttachmentPolicy != notify.AttachmentPolicySupported {
-		t.Fatalf("email.AttachmentPolicy = %q", email.AttachmentPolicy)
-	}
-	if configuration.Defaults["channel"] != notify.ChannelEmail {
-		t.Fatalf("default channel = %q", configuration.Defaults["channel"])
+	if configuration.Logging.Path != "/tmp/noticli.log" {
+		t.Fatalf("logging path = %q", configuration.Logging.Path)
 	}
 }
 
-func TestLoadMapsTopicTelegramRecipient(t *testing.T) {
-	path := writeTempConfig(t, `{
-		"recipients": {
-			"rodrigogml-topics": {
-				"name": "Rodrigo GML Topics",
-				"telegram_delivery_mode": "topics",
-				"telegram_topic_group_chat_id": "-1001234567890",
-				"telegram_topic_group_name": "NotiCLI"
-			}
-		},
-		"channels": {
-			"telegram": {
-				"type": "telegram",
-				"settings": {"parse_mode": "HTML"},
-				"secrets": {"token": "123456:ABCDEF"},
-				"attachments": "unsupported"
-			}
-		}
-	}`)
+func TestLoadDefaultsLoggingPathBesideConfig(t *testing.T) {
+	path := writeTempConfig(t, minimalConfigJSON())
 
 	configuration, err := config.Load(path)
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-
-	recipient := configuration.Recipients["rodrigogml-topics"]
-	if recipient.TelegramDeliveryMode != notify.TelegramDeliveryModeTopics {
-		t.Fatalf("TelegramDeliveryMode = %q, want topics", recipient.TelegramDeliveryMode)
-	}
-	if recipient.TelegramTopicGroupChatID != "-1001234567890" {
-		t.Fatalf("TelegramTopicGroupChatID = %q", recipient.TelegramTopicGroupChatID)
-	}
-	if recipient.TelegramTopicGroupName != "NotiCLI" {
-		t.Fatalf("TelegramTopicGroupName = %q, want NotiCLI", recipient.TelegramTopicGroupName)
+	want := filepath.Join(filepath.Dir(path), "noticli.delivery.log")
+	if configuration.Logging.Path != want {
+		t.Fatalf("Logging.Path = %q, want %q", configuration.Logging.Path, want)
 	}
 }
 
-func TestLoadRejectsInvalidTelegramDeliveryMode(t *testing.T) {
-	path := writeTempConfig(t, `{
-		"recipients": {
-			"ops": {
-				"telegram_chat_id": "12345",
-				"telegram_delivery_mode": "broadcast"
-			}
-		},
-		"channels": {
-			"telegram": {
-				"type": "telegram",
-				"settings": {"parse_mode": "HTML"},
-				"secrets": {"token": "123456:ABCDEF"},
-				"attachments": "unsupported"
-			}
-		}
-	}`)
+func TestLoadRejectsLegacyConfiguration(t *testing.T) {
+	path := writeTempConfig(t, `{"recipients": {"ops": {"email": "ops@example.com"}}, "channels": {}}`)
 
 	_, err := config.Load(path)
 	assertDiagnosticCategory(t, err, diagnostics.CategoryInvalidConfig)
-	assertDoesNotContain(t, err, "123456:ABCDEF")
+	if !strings.Contains(err.Error(), "legacy configuration") {
+		t.Fatalf("error = %q, want legacy configuration context", err.Error())
+	}
 }
 
-func TestLoadAllowsIncompleteTopicDestinationButResolveRejectsWithoutTokenLeak(t *testing.T) {
+func TestLoadRejectsMissingCatchAllAndBadReferences(t *testing.T) {
+	path := writeTempConfig(t, strings.Replace(minimalConfigJSON(), `"catch_all": {"deliveries": [{"account": "smtp-main", "destination": "ops-email"}]}`, `"catch_all": {}`, 1))
+	_, err := config.Load(path)
+	assertDiagnosticCategory(t, err, diagnostics.CategoryInvalidConfig)
+
+	path = writeTempConfig(t, strings.Replace(minimalConfigJSON(), `"destination": "ops-email"`, `"destination": "missing"`, 1))
+	_, err = config.Load(path)
+	assertDiagnosticCategory(t, err, diagnostics.CategoryInvalidConfig)
+}
+
+func TestLoadRejectsTelegramThreadWithoutMessageThreadID(t *testing.T) {
 	path := writeTempConfig(t, `{
-		"recipients": {
-			"ops": {
-				"telegram_delivery_mode": "topics"
+		"destinations": {
+			"ops-thread": {
+				"type": "telegram",
+				"telegram_delivery_mode": "thread",
+				"telegram_topic_group_chat_id": "-1001234567890"
 			}
 		},
-		"channels": {
-			"telegram": {
+		"delivery_accounts": {
+			"telegram-main": {
 				"type": "telegram",
 				"settings": {"parse_mode": "HTML"},
 				"secrets": {"token": "123456:ABCDEF"},
 				"attachments": "unsupported"
 			}
-		}
+		},
+		"catch_all": {"deliveries": [{"account": "telegram-main", "destination": "ops-thread"}]}
 	}`)
 
-	configuration, err := config.Load(path)
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	_, err = configuration.Resolve(notify.Request{
-		SenderSystem: "BackupJob",
-		RecipientID:  "ops",
-		Channel:      notify.ChannelTelegram,
-		Title:        "Backup failed",
-		Message:      "Nightly backup failed",
-	})
+	_, err := config.Load(path)
 	assertDiagnosticCategory(t, err, diagnostics.CategoryInvalidConfig)
 	assertDoesNotContain(t, err, "123456:ABCDEF")
 }
@@ -187,17 +138,27 @@ func TestLoadReturnsMissingConfigForUnreadablePath(t *testing.T) {
 }
 
 func TestLoadReturnsInvalidConfigForMalformedJSON(t *testing.T) {
-	path := writeTempConfig(t, `{"recipients":`)
+	path := writeTempConfig(t, `{"destinations":`)
 
 	_, err := config.Load(path)
 	assertDiagnosticCategory(t, err, diagnostics.CategoryInvalidConfig)
 }
 
-func TestLoadReturnsInvalidConfigForIncompleteConfiguration(t *testing.T) {
-	path := writeTempConfig(t, `{"recipients": {}, "channels": {}}`)
-
-	_, err := config.Load(path)
-	assertDiagnosticCategory(t, err, diagnostics.CategoryInvalidConfig)
+func minimalConfigJSON() string {
+	return `{
+		"destinations": {
+			"ops-email": {"type": "email", "email": "ops@example.com"}
+		},
+		"delivery_accounts": {
+			"smtp-main": {
+				"type": "email",
+				"settings": {"from": "noticli@example.com", "host": "smtp.example.com", "port": "587"},
+				"secrets": {"smtp_password": "secret"},
+				"attachments": "supported"
+			}
+		},
+		"catch_all": {"deliveries": [{"account": "smtp-main", "destination": "ops-email"}]}
+	}`
 }
 
 func writeTempConfig(t *testing.T, content string) string {

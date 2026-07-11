@@ -62,8 +62,8 @@ func parseSend(args []string, executablePath string) (notify.Request, error) {
 	flags.SetOutput(io.Discard)
 	flags.StringVar(&request.ConfigPath, "config", "", "configuration file path")
 	flags.StringVar(&request.SenderSystem, "sender", "", "sending system identifier")
-	flags.StringVar(&request.RecipientID, "recipient", "", "configured recipient identifier")
-	flags.StringVar(&request.Channel, "channel", "", "notification channel")
+	flags.StringVar(&request.Category, "category", "", "notification category")
+	flags.StringVar(&request.Priority, "priority", notify.PriorityNormal, "notification priority")
 	flags.StringVar(&request.Title, "title", "", "notification title")
 	flags.StringVar(&request.Message, "message", "", "notification message")
 	flags.Var(&attachments, "attach", "attachment path")
@@ -84,8 +84,8 @@ func parseSend(args []string, executablePath string) (notify.Request, error) {
 
 	request.ConfigPath = strings.TrimSpace(request.ConfigPath)
 	request.SenderSystem = strings.TrimSpace(request.SenderSystem)
-	request.RecipientID = strings.TrimSpace(request.RecipientID)
-	request.Channel = strings.TrimSpace(request.Channel)
+	request.Category = strings.TrimSpace(request.Category)
+	request.Priority = strings.ToUpper(strings.TrimSpace(request.Priority))
 	request.Title = strings.TrimSpace(request.Title)
 	request.Message = strings.TrimSpace(request.Message)
 
@@ -101,14 +101,11 @@ func parseSend(args []string, executablePath string) (notify.Request, error) {
 	if len([]rune(request.SenderSystem)) > notify.MaxSenderSystemLength {
 		return notify.Request{}, ParseError{Message: fmt.Sprintf("--sender must be at most %d characters", notify.MaxSenderSystemLength), ShowHelp: true}
 	}
-	if request.RecipientID == "" {
-		return notify.Request{}, ParseError{Message: "missing required flag --recipient", ShowHelp: true}
+	if request.Priority == "" {
+		request.Priority = notify.PriorityNormal
 	}
-	if request.Channel == "" {
-		return notify.Request{}, ParseError{Message: "missing required flag --channel", ShowHelp: true}
-	}
-	if !isSupportedChannel(request.Channel) {
-		return notify.Request{}, ParseError{Message: fmt.Sprintf("unsupported channel %q", request.Channel), ShowHelp: true}
+	if !notify.IsValidPriority(request.Priority) {
+		return notify.Request{}, ParseError{Message: fmt.Sprintf("unsupported priority %q", request.Priority), ShowHelp: true}
 	}
 	if request.Title == "" {
 		return notify.Request{}, ParseError{Message: "missing required flag --title", ShowHelp: true}
@@ -252,21 +249,21 @@ func writeUsageFailure(w io.Writer, message string) int {
 func Usage() string {
 	return strings.TrimLeft(`
 Usage:
-  noticli send --sender <system> --recipient <id> --channel <email|telegram|slack> --title <text> --message <text> [--config <path>] [--attach <path>...]
+  noticli send --sender <system> --title <text> --message <text> [--priority <HIGH|NORMAL|LOW>] [--category <text>] [--config <path>] [--attach <path>...]
 
 Required flags:
   --sender     Calling system identifier, up to 20 characters.
-  --recipient  Recipient ID configured in noticli.json.
-  --channel    Delivery channel: email, telegram or slack.
   --title      Notification title or subject.
   --message    Notification body.
 
 Optional flags:
   --config     JSON configuration file. Defaults to config/noticli.json beside the resolved executable path.
-  --attach     Readable file attachment. May be repeated. Supported by email only.
+  --category   Routing category matched by noticli.json routes.
+  --priority   Routing priority: HIGH, NORMAL or LOW. Defaults to NORMAL.
+  --attach     Readable file attachment. May be repeated; unsupported destinations receive the message without attachments.
 
 Examples:
-  noticli send --sender BackupJob --recipient ops --channel email --title "Backup failed" --message "Nightly backup failed on server-01"
-  noticli send --config /opt/NotiCLI/releases/v1.1.2/config/noticli.json --sender DeployBot --recipient ops --channel slack --title "Deploy complete" --message "Release completed"
+  noticli send --sender BackupJob --category backup --priority HIGH --title "Backup failed" --message "Nightly backup failed on server-01"
+  noticli send --config /opt/NotiCLI/releases/v2.0.0/config/noticli.json --sender DeployBot --title "Deploy complete" --message "Release completed"
 `, "\n")
 }

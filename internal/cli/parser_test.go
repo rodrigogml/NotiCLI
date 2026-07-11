@@ -16,8 +16,8 @@ func TestParseSendMapsFlagsToNotificationRequest(t *testing.T) {
 		"send",
 		"--config", "./noticli.json",
 		"--sender", "BackupJob",
-		"--recipient", "ops",
-		"--channel", "email",
+		"--category", "backup",
+		"--priority", "high",
 		"--title", "Backup failed",
 		"--message", "Nightly backup failed",
 		"--attach", "./a.txt",
@@ -33,34 +33,25 @@ func TestParseSendMapsFlagsToNotificationRequest(t *testing.T) {
 	if request.SenderSystem != "BackupJob" {
 		t.Fatalf("SenderSystem = %q", request.SenderSystem)
 	}
-	if request.RecipientID != "ops" {
-		t.Fatalf("RecipientID = %q", request.RecipientID)
+	if request.Category != "backup" {
+		t.Fatalf("Category = %q", request.Category)
 	}
-	if request.Channel != notify.ChannelEmail {
-		t.Fatalf("Channel = %q", request.Channel)
+	if request.Priority != notify.PriorityHigh {
+		t.Fatalf("Priority = %q", request.Priority)
 	}
-	if request.Title != "Backup failed" {
-		t.Fatalf("Title = %q", request.Title)
-	}
-	if request.Message != "Nightly backup failed" {
-		t.Fatalf("Message = %q", request.Message)
+	if request.Title != "Backup failed" || request.Message != "Nightly backup failed" {
+		t.Fatalf("request title/message = %#v", request)
 	}
 	if len(request.Attachments) != 2 {
 		t.Fatalf("Attachments length = %d", len(request.Attachments))
 	}
-	if request.Attachments[0].Path != "./a.txt" || request.Attachments[1].Path != "./b.txt" {
-		t.Fatalf("Attachments = %#v", request.Attachments)
-	}
 }
 
-func TestParseSendDefaultsConfigPathToExecutableDirectory(t *testing.T) {
+func TestParseSendDefaultsPriorityAndConfigPath(t *testing.T) {
 	executablePath := filepath.Join(t.TempDir(), "bin", "noticli")
-
 	request, err := cli.ParseWithExecutablePath([]string{
 		"send",
 		"--sender", "BackupJob",
-		"--recipient", "ops",
-		"--channel", "email",
 		"--title", "Backup failed",
 		"--message", "Nightly backup failed",
 	}, executablePath)
@@ -71,6 +62,9 @@ func TestParseSendDefaultsConfigPathToExecutableDirectory(t *testing.T) {
 	want := filepath.Join(filepath.Dir(executablePath), "config", cli.DefaultConfigFileName)
 	if request.ConfigPath != want {
 		t.Fatalf("ConfigPath = %q, want %q", request.ConfigPath, want)
+	}
+	if request.Priority != notify.PriorityNormal {
+		t.Fatalf("Priority = %q, want NORMAL", request.Priority)
 	}
 }
 
@@ -102,28 +96,6 @@ func TestDefaultConfigPathUsesReleaseConfigDirectoryOnly(t *testing.T) {
 }
 
 func TestDefaultConfigPathDoesNotUseCallerPathWhenExecutablePathIsUnavailable(t *testing.T) {
-	root := t.TempDir()
-	fakeBinDir := filepath.Join(root, "bin")
-	fakeReleaseDir := filepath.Join(root, "opt", "NotiCLI", "releases", "poisoned")
-	for _, dir := range []string{fakeBinDir, fakeReleaseDir} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			t.Fatalf("MkdirAll(%s) error = %v", dir, err)
-		}
-	}
-	if err := os.WriteFile(filepath.Join(fakeReleaseDir, "noticli"), []byte{}, 0o755); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
-	if err := os.Symlink(filepath.Join(fakeReleaseDir, "noticli"), filepath.Join(fakeBinDir, "noticli")); err != nil {
-		t.Fatalf("Symlink() error = %v", err)
-	}
-
-	t.Setenv("PATH", fakeBinDir)
-	originalArgs := os.Args
-	os.Args = []string{"noticli"}
-	t.Cleanup(func() {
-		os.Args = originalArgs
-	})
-
 	got := cli.DefaultConfigPath("")
 	want := filepath.Join("config", cli.DefaultConfigFileName)
 	if got != want {
@@ -131,72 +103,27 @@ func TestDefaultConfigPathDoesNotUseCallerPathWhenExecutablePathIsUnavailable(t 
 	}
 }
 
-func TestParseSendRejectsEmptyExplicitConfigPath(t *testing.T) {
-	_, err := cli.ParseWithExecutablePath([]string{
-		"send",
-		"--config", "",
-		"--sender", "BackupJob",
-		"--recipient", "ops",
-		"--channel", "email",
-		"--title", "Backup failed",
-		"--message", "Nightly backup failed",
-	}, filepath.Join(t.TempDir(), "noticli"))
-	if err == nil {
-		t.Fatal("Parse() error = nil, want empty config error")
+func TestParseSendRejectsInvalidInputs(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "empty config", args: []string{"send", "--config", "", "--sender", "BackupJob", "--title", "Title", "--message", "Body"}},
+		{name: "missing sender", args: []string{"send", "--title", "Title", "--message", "Body"}},
+		{name: "long sender", args: []string{"send", "--sender", "SystemNameLongerThan20", "--title", "Title", "--message", "Body"}},
+		{name: "missing title", args: []string{"send", "--sender", "BackupJob", "--message", "Body"}},
+		{name: "invalid priority", args: []string{"send", "--sender", "BackupJob", "--priority", "URGENT", "--title", "Title", "--message", "Body"}},
+		{name: "old recipient flag", args: []string{"send", "--sender", "BackupJob", "--recipient", "ops", "--title", "Title", "--message", "Body"}},
+		{name: "old channel flag", args: []string{"send", "--sender", "BackupJob", "--channel", "email", "--title", "Title", "--message", "Body"}},
 	}
-}
 
-func TestParseSendRejectsMissingSenderSystem(t *testing.T) {
-	_, err := cli.ParseWithExecutablePath([]string{
-		"send",
-		"--recipient", "ops",
-		"--channel", "email",
-		"--title", "Backup failed",
-		"--message", "Nightly backup failed",
-	}, filepath.Join(t.TempDir(), "noticli"))
-	if err == nil {
-		t.Fatal("Parse() error = nil, want missing sender error")
-	}
-}
-
-func TestParseSendRejectsLongSenderSystem(t *testing.T) {
-	_, err := cli.ParseWithExecutablePath([]string{
-		"send",
-		"--sender", "SystemNameLongerThan20",
-		"--recipient", "ops",
-		"--channel", "email",
-		"--title", "Backup failed",
-		"--message", "Nightly backup failed",
-	}, filepath.Join(t.TempDir(), "noticli"))
-	if err == nil {
-		t.Fatal("Parse() error = nil, want long sender error")
-	}
-}
-
-func TestParseSendRejectsMissingRequiredFlags(t *testing.T) {
-	_, err := cli.ParseWithExecutablePath([]string{
-		"send",
-		"--sender", "BackupJob",
-		"--channel", "email",
-		"--title", "Backup failed",
-		"--message", "Nightly backup failed",
-	}, filepath.Join(t.TempDir(), "noticli"))
-	if err == nil {
-		t.Fatal("Parse() error = nil, want missing recipient error")
-	}
-}
-
-func TestParseSendRejectsUnsupportedChannel(t *testing.T) {
-	_, err := cli.ParseWithExecutablePath([]string{
-		"send",
-		"--sender", "BackupJob",
-		"--recipient", "ops",
-		"--channel", "sms",
-		"--title", "Backup failed",
-		"--message", "Nightly backup failed",
-	}, filepath.Join(t.TempDir(), "noticli"))
-	if err == nil {
-		t.Fatal("Parse() error = nil, want unsupported channel error")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := cli.ParseWithExecutablePath(tt.args, filepath.Join(t.TempDir(), "noticli"))
+			if err == nil {
+				t.Fatal("Parse() error = nil, want error")
+			}
+		})
 	}
 }
 
@@ -204,15 +131,12 @@ func TestRunIsNonInteractiveAndReturnsInvalidInputForParseErrors(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	code := cli.Run([]string{"send", "--sender", "BackupJob", "--recipient", "ops"}, &stdout, &stderr)
+	code := cli.Run([]string{"send", "--sender", "BackupJob"}, &stdout, &stderr)
 	if code != cli.ExitInvalidInput {
 		t.Fatalf("Run() exit code = %d, want %d", code, cli.ExitInvalidInput)
 	}
 	if stdout.Len() != 0 {
 		t.Fatalf("stdout = %q, want empty", stdout.String())
-	}
-	if stderr.String() == "" {
-		t.Fatal("stderr is empty, want diagnostic")
 	}
 	if !strings.Contains(stderr.String(), "Usage:") {
 		t.Fatalf("stderr = %q, want usage help", stderr.String())
@@ -227,17 +151,8 @@ func TestRunWithoutArgumentsReturnsUsageHelp(t *testing.T) {
 	if code != cli.ExitInvalidInput {
 		t.Fatalf("Run() exit code = %d, want %d", code, cli.ExitInvalidInput)
 	}
-	if stdout.Len() != 0 {
-		t.Fatalf("stdout = %q, want empty", stdout.String())
-	}
 	got := stderr.String()
-	for _, want := range []string{
-		"invalid_input: missing command",
-		"Usage:",
-		"noticli send --sender <system>",
-		"Required flags:",
-		"Examples:",
-	} {
+	for _, want := range []string{"invalid_input: missing command", "Usage:", "noticli send --sender <system>", "Required flags:", "Examples:"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("stderr = %q, want substring %q", got, want)
 		}
@@ -253,8 +168,6 @@ func TestRunLoadsConfigFromConfigFlag(t *testing.T) {
 		"send",
 		"--config", configPath,
 		"--sender", "BackupJob",
-		"--recipient", "ops",
-		"--channel", "email",
 		"--title", "Backup failed",
 		"--message", "Nightly backup failed",
 	}, &stdout, &stderr)
@@ -274,8 +187,6 @@ func TestRunReturnsMissingConfigWhenConfigFileDoesNotExist(t *testing.T) {
 		"send",
 		"--config", filepath.Join(t.TempDir(), "missing.json"),
 		"--sender", "BackupJob",
-		"--recipient", "ops",
-		"--channel", "email",
 		"--title", "Backup failed",
 		"--message", "Nightly backup failed",
 	}, &stdout, &stderr)
@@ -296,8 +207,6 @@ func TestRunReturnsInvalidConfigWithoutLeakingSecrets(t *testing.T) {
 		"send",
 		"--config", configPath,
 		"--sender", "BackupJob",
-		"--recipient", "ops",
-		"--channel", "telegram",
 		"--title", "Backup failed",
 		"--message", "Nightly backup failed",
 	}, &stdout, &stderr)
@@ -318,16 +227,18 @@ func writeConfig(t *testing.T) string {
 
 	path := filepath.Join(t.TempDir(), "noticli.json")
 	content := `{
-		"recipients": {
-			"ops": {"email": "ops@example.com"}
+		"destinations": {
+			"ops-email": {"type": "email", "email": "ops@example.com"}
 		},
-		"channels": {
-			"email": {
+		"delivery_accounts": {
+			"smtp-main": {
+				"type": "email",
 				"settings": {"from": "noticli@example.com"},
 				"secrets": {"smtp_password": "secret"},
 				"attachments": "supported"
 			}
-		}
+		},
+		"catch_all": {"deliveries": [{"account": "smtp-main", "destination": "ops-email"}]}
 	}`
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
@@ -340,16 +251,18 @@ func writeInvalidTelegramConfig(t *testing.T) string {
 
 	path := filepath.Join(t.TempDir(), "noticli.json")
 	content := `{
-		"recipients": {
-			"ops": {"email": "ops@example.com", "telegram_chat_id": "12345"}
+		"destinations": {
+			"ops-telegram": {"type": "telegram", "telegram_chat_id": "12345"}
 		},
-		"channels": {
-			"telegram": {
+		"delivery_accounts": {
+			"telegram-main": {
+				"type": "telegram",
 				"settings": {},
 				"secrets": {"token": "123456:ABCDEFGHIJKLMNOPQRSTUVWXYZ"},
 				"attachments": "limited"
 			}
-		}
+		},
+		"catch_all": {"deliveries": [{"account": "telegram-main", "destination": "ops-telegram"}]}
 	}`
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)

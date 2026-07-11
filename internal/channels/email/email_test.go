@@ -16,7 +16,7 @@ func TestSendBuildsMessageAndUsesTransport(t *testing.T) {
 	transport := &fakeTransport{}
 	sender := NewSender(transport)
 
-	result, err := sender.Send(context.Background(), validRequest(), validRecipient(), validConfig())
+	result, err := sender.Send(context.Background(), validRequest(), validDelivery(validConfig()))
 	if err != nil {
 		t.Fatalf("Send() error = %v", err)
 	}
@@ -62,7 +62,7 @@ func TestSendIncludesAttachmentsInTransportMessage(t *testing.T) {
 		ContentType: "text/plain; charset=utf-8",
 	}}
 
-	result, err := NewSender(transport).Send(context.Background(), request, validRecipient(), validConfig())
+	result, err := NewSender(transport).Send(context.Background(), request, validDelivery(validConfig()))
 	if err != nil {
 		t.Fatalf("Send() error = %v", err)
 	}
@@ -82,7 +82,7 @@ func TestSendDefaultsUsernameToFromAddress(t *testing.T) {
 	config := validConfig()
 	delete(config.Settings, settingUsername)
 
-	_, err := NewSender(transport).Send(context.Background(), validRequest(), validRecipient(), config)
+	_, err := NewSender(transport).Send(context.Background(), validRequest(), validDelivery(config))
 	if err != nil {
 		t.Fatalf("Send() error = %v", err)
 	}
@@ -95,7 +95,7 @@ func TestSendReturnsInvalidConfigForMissingEmailSettings(t *testing.T) {
 	config := validConfig()
 	delete(config.Settings, settingHost)
 
-	result, err := NewSender(&fakeTransport{}).Send(context.Background(), validRequest(), validRecipient(), config)
+	result, err := NewSender(&fakeTransport{}).Send(context.Background(), validRequest(), validDelivery(config))
 	if err == nil {
 		t.Fatal("Send() error = nil, want invalid_config")
 	}
@@ -108,7 +108,7 @@ func TestSendReturnsInvalidConfigForMissingEmailSettings(t *testing.T) {
 func TestSendMapsTransportFailureToDeliveryFailure(t *testing.T) {
 	transport := &fakeTransport{err: errors.New("smtp rejected credentials password=secret")}
 
-	result, err := NewSender(transport).Send(context.Background(), validRequest(), validRecipient(), validConfig())
+	result, err := NewSender(transport).Send(context.Background(), validRequest(), validDelivery(validConfig()))
 	if err == nil {
 		t.Fatal("Send() error = nil, want delivery_failure")
 	}
@@ -190,23 +190,24 @@ func (f *fakeTransport) Send(_ context.Context, message Message) error {
 func validRequest() notify.Request {
 	return notify.Request{
 		SenderSystem: "BackupJob",
-		RecipientID:  "ops",
-		Channel:      notify.ChannelEmail,
+		Priority:     notify.PriorityNormal,
 		Title:        "Backup failed",
 		Message:      "Nightly backup failed",
 	}
 }
 
-func validRecipient() notify.Recipient {
-	return notify.Recipient{
+func validDestination() notify.Destination {
+	return notify.Destination{
 		ID:      "ops",
+		Type:    notify.ChannelEmail,
 		Email:   "ops@example.com",
 		Enabled: true,
 	}
 }
 
-func validConfig() notify.ChannelConfig {
-	return notify.ChannelConfig{
+func validConfig() notify.DeliveryAccount {
+	return notify.DeliveryAccount{
+		ID:      "smtp-main",
 		Type:    notify.ChannelEmail,
 		Enabled: true,
 		Settings: map[string]string{
@@ -220,6 +221,16 @@ func validConfig() notify.ChannelConfig {
 			secretSMTPPassword: "secret",
 		},
 		AttachmentPolicy: notify.AttachmentPolicySupported,
+	}
+}
+
+func validDelivery(account notify.DeliveryAccount) notify.ResolvedDelivery {
+	return notify.ResolvedDelivery{
+		RouteID:       "backup-high",
+		AccountID:     account.ID,
+		DestinationID: "ops-email",
+		Account:       account,
+		Destination:   validDestination(),
 	}
 }
 

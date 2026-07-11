@@ -77,17 +77,20 @@ func (Sender) Name() string {
 	return notify.ChannelTelegram
 }
 
-func (s Sender) Send(ctx context.Context, request notify.Request, recipient notify.Recipient, config notify.ChannelConfig) (notify.Result, error) {
+func (s Sender) Send(ctx context.Context, request notify.Request, delivery notify.ResolvedDelivery) (notify.Result, error) {
 	if len(request.Attachments) > 0 {
 		err := diagnostics.ForChannel(diagnostics.CategoryAttachmentError, notify.ChannelTelegram, "attachments are not supported for channel")
 		return notify.FailureResult(err.Category, err.Channel, err.Message), err
 	}
-	if recipient.EffectiveTelegramDeliveryMode() == notify.TelegramDeliveryModeTopics {
-		return s.sendTopicMessage(ctx, request, recipient, config)
+	if delivery.Destination.EffectiveTelegramDeliveryMode() == notify.TelegramDeliveryModeTopics {
+		return s.sendTopicMessage(ctx, request, delivery)
 	}
-	message, err := buildMessage(request, recipient, config)
+	message, err := buildMessage(request, delivery.Destination, delivery.Account)
 	if err != nil {
 		return notify.FailureResult(diagnostics.CategoryInvalidConfig, notify.ChannelTelegram, diagnostics.FromError(err).Message), err
+	}
+	if delivery.Destination.EffectiveTelegramDeliveryMode() == notify.TelegramDeliveryModeThread {
+		message.MessageThreadID = delivery.Destination.MessageThreadID
 	}
 
 	client := s.client
@@ -107,8 +110,9 @@ func (s Sender) Send(ctx context.Context, request notify.Request, recipient noti
 	return notify.SuccessResult(notify.ChannelTelegram, "telegram accepted"), nil
 }
 
-func (s Sender) sendTopicMessage(ctx context.Context, request notify.Request, recipient notify.Recipient, config notify.ChannelConfig) (notify.Result, error) {
-	message, err := buildMessage(request, recipient, config)
+func (s Sender) sendTopicMessage(ctx context.Context, request notify.Request, delivery notify.ResolvedDelivery) (notify.Result, error) {
+	destination := delivery.Destination
+	message, err := buildMessage(request, destination, delivery.Account)
 	if err != nil {
 		return notify.FailureResult(diagnostics.CategoryInvalidConfig, notify.ChannelTelegram, diagnostics.FromError(err).Message), err
 	}
@@ -131,10 +135,10 @@ func (s Sender) sendTopicMessage(ctx context.Context, request notify.Request, re
 		diagnostic := diagnostics.ForChannel(diagnostics.CategoryInternalError, notify.ChannelTelegram, err.Error())
 		return notify.FailureResult(diagnostic.Category, diagnostic.Channel, diagnostic.Message), diagnostic
 	}
-	association, ok := state.FindAssociation(recipient.ID, message.ChatID, request.SenderSystem)
+	association, ok := state.FindAssociation(destination.ID, message.ChatID, request.SenderSystem)
 	knownAssociation := ok
 	if !ok {
-		association, err = s.createTopicAssociation(ctx, client, baseURL, request, recipient, message, state)
+		association, err = s.createTopicAssociation(ctx, client, baseURL, request, destination, message, state)
 		if err != nil {
 			diagnostic := diagnostics.FromError(err)
 			if diagnostic.Category == diagnostics.CategoryInternalError || diagnostic.Category == diagnostics.CategoryDeliveryFailure {
@@ -147,7 +151,7 @@ func (s Sender) sendTopicMessage(ctx context.Context, request notify.Request, re
 
 	if err := sendMessage(ctx, client, baseURL, message); err != nil {
 		if knownAssociation && isStaleTopicError(err) {
-			replacement, recoveryErr := s.replaceTopicAssociation(ctx, client, baseURL, request, recipient, message)
+			replacement, recoveryErr := s.replaceTopicAssociation(ctx, client, baseURL, request, destination, message)
 			if recoveryErr != nil {
 				diagnostic := diagnostics.FromError(recoveryErr)
 				return notify.FailureResult(diagnostic.Category, notify.ChannelTelegram, diagnostic.Message), diagnostic
@@ -163,7 +167,7 @@ func (s Sender) sendTopicMessage(ctx context.Context, request notify.Request, re
 		}
 	}
 	if _, err := s.topicStore.Update(ctx, func(state *telegramtopics.State) error {
-		state.TouchAssociation(recipient.ID, message.ChatID, request.SenderSystem, s.currentTime())
+		state.TouchAssociation(destination.ID, message.ChatID, request.SenderSystem, s.currentTime())
 		return nil
 	}); err != nil {
 		diagnostic := diagnostics.ForChannel(diagnostics.CategoryInternalError, notify.ChannelTelegram, err.Error())
@@ -173,19 +177,19 @@ func (s Sender) sendTopicMessage(ctx context.Context, request notify.Request, re
 	return notify.SuccessResult(notify.ChannelTelegram, "telegram accepted"), nil
 }
 
-func (s Sender) createTopicAssociation(ctx context.Context, client HTTPClient, baseURL string, request notify.Request, recipient notify.Recipient, message Message, observedState telegramtopics.State) (telegramtopics.Association, error) {
+func (s Sender) createTopicAssociation(ctx context.Context, client HTTPClient, baseURL string, request notify.Request, destination notify.Destination, message Message, observedState telegramtopics.State) (telegramtopics.Association, error) {
 	if err := s.topicStore.PrepareForUpdate(ctx); err != nil {
 		return telegramtopics.Association{}, diagnostics.ForChannel(diagnostics.CategoryInternalError, notify.ChannelTelegram, err.Error())
 	}
 
 	var association telegramtopics.Association
 	_, err := s.topicStore.Update(ctx, func(state *telegramtopics.State) error {
-		if existing, ok := state.FindAssociation(recipient.ID, message.ChatID, request.SenderSystem); ok {
+		if existing, ok := state.FindAssociation(destination.ID, message.ChatID, request.SenderSystem); ok {
 			association = existing
 			return nil
 		}
 
-		topicName, disambiguator := telegramtopics.TopicNameForSender(recipient.ID, message.ChatID, request.SenderSystem, state.Associations)
+		topicName, disambiguator := telegramtopics.TopicNameForSender(destination.ID, message.ChatID, request.SenderSystem, state.Associations)
 		threadID, err := createForumTopic(ctx, client, baseURL, ForumTopic{
 			Token:  message.Token,
 			ChatID: message.ChatID,
@@ -197,7 +201,7 @@ func (s Sender) createTopicAssociation(ctx context.Context, client HTTPClient, b
 
 		now := s.currentTime()
 		association = telegramtopics.Association{
-			RecipientID:            recipient.ID,
+			RecipientID:            destination.ID,
 			ChatID:                 message.ChatID,
 			Sender:                 request.SenderSystem,
 			TopicName:              topicName,
@@ -214,7 +218,7 @@ func (s Sender) createTopicAssociation(ctx context.Context, client HTTPClient, b
 		return telegramtopics.Association{}, err
 	}
 	if association.MessageThreadID <= 0 {
-		if existing, ok := observedState.FindAssociation(recipient.ID, message.ChatID, request.SenderSystem); ok {
+		if existing, ok := observedState.FindAssociation(destination.ID, message.ChatID, request.SenderSystem); ok {
 			return existing, nil
 		}
 		return telegramtopics.Association{}, diagnostics.ForChannel(diagnostics.CategoryInternalError, notify.ChannelTelegram, "telegram topic association was not created")
@@ -222,14 +226,14 @@ func (s Sender) createTopicAssociation(ctx context.Context, client HTTPClient, b
 	return association, nil
 }
 
-func (s Sender) replaceTopicAssociation(ctx context.Context, client HTTPClient, baseURL string, request notify.Request, recipient notify.Recipient, message Message) (telegramtopics.Association, error) {
+func (s Sender) replaceTopicAssociation(ctx context.Context, client HTTPClient, baseURL string, request notify.Request, destination notify.Destination, message Message) (telegramtopics.Association, error) {
 	if err := s.topicStore.PrepareForUpdate(ctx); err != nil {
 		return telegramtopics.Association{}, diagnostics.ForChannel(diagnostics.CategoryInternalError, notify.ChannelTelegram, err.Error())
 	}
 
 	var replacement telegramtopics.Association
 	_, err := s.topicStore.Update(ctx, func(state *telegramtopics.State) error {
-		topicName, disambiguator := telegramtopics.TopicNameForSender(recipient.ID, message.ChatID, request.SenderSystem, state.Associations)
+		topicName, disambiguator := telegramtopics.TopicNameForSender(destination.ID, message.ChatID, request.SenderSystem, state.Associations)
 		threadID, err := createForumTopic(ctx, client, baseURL, ForumTopic{
 			Token:  message.Token,
 			ChatID: message.ChatID,
@@ -241,7 +245,7 @@ func (s Sender) replaceTopicAssociation(ctx context.Context, client HTTPClient, 
 
 		now := s.currentTime()
 		for index, association := range state.Associations {
-			if association.Key() == telegramtopics.AssociationKey(recipient.ID, message.ChatID, request.SenderSystem) {
+			if association.Key() == telegramtopics.AssociationKey(destination.ID, message.ChatID, request.SenderSystem) {
 				state.Associations[index].Status = telegramtopics.TopicStatusReplaced
 				state.Associations[index].TopicName = topicName
 				state.Associations[index].TopicNameDisambiguator = disambiguator
@@ -280,7 +284,7 @@ type ForumTopic struct {
 	Name   string
 }
 
-func buildMessage(request notify.Request, recipient notify.Recipient, config notify.ChannelConfig) (Message, error) {
+func buildMessage(request notify.Request, destination notify.Destination, config notify.DeliveryAccount) (Message, error) {
 	if config.Type != notify.ChannelTelegram {
 		return Message{}, invalidConfig("channel config type must be telegram")
 	}
@@ -288,23 +292,23 @@ func buildMessage(request notify.Request, recipient notify.Recipient, config not
 	if token == "" {
 		return Message{}, invalidConfig(fmt.Sprintf("required secret %q is missing", secretToken))
 	}
-	chatID, ok := recipient.DestinationFor(notify.ChannelTelegram)
+	chatID, ok := destination.Address()
 	if !ok {
-		return Message{}, invalidConfig("recipient has no telegram destination")
+		return Message{}, invalidConfig("destination has no telegram destination")
 	}
 
 	return Message{
 		Token:     token,
 		ChatID:    chatID,
-		Text:      formatText(request, recipient),
+		Text:      formatText(request, destination),
 		ParseMode: strings.TrimSpace(config.Settings[settingParseMode]),
 	}, nil
 }
 
-func formatText(request notify.Request, recipient notify.Recipient) string {
+func formatText(request notify.Request, destination notify.Destination) string {
 	title := strings.TrimSpace(request.Title)
 	body := strings.TrimSpace(request.Message)
-	if recipient.EffectiveTelegramDeliveryMode() == notify.TelegramDeliveryModePrivate && strings.TrimSpace(request.SenderSystem) != "" && title != "" {
+	if destination.EffectiveTelegramDeliveryMode() == notify.TelegramDeliveryModePrivate && strings.TrimSpace(request.SenderSystem) != "" && title != "" {
 		title = fmt.Sprintf("[%s] %s", strings.TrimSpace(request.SenderSystem), title)
 	}
 	if title == "" {

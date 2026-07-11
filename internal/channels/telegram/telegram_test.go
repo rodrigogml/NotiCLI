@@ -39,7 +39,7 @@ func TestSendPostsMessageToTelegramAPI(t *testing.T) {
 	defer server.Close()
 
 	sender := Sender{client: server.Client(), baseURL: server.URL}
-	result, err := sender.Send(context.Background(), validRequest(), validRecipient(), validConfig())
+	result, err := sender.Send(context.Background(), validRequest(), validDelivery())
 	if err != nil {
 		t.Fatalf("Send() error = %v", err)
 	}
@@ -75,7 +75,7 @@ func TestSendExplicitPrivateModeDoesNotRequireTopicStore(t *testing.T) {
 	recipient := validRecipient()
 	recipient.TelegramDeliveryMode = notify.TelegramDeliveryModePrivate
 	sender := Sender{client: server.Client(), baseURL: server.URL}
-	result, err := sender.Send(context.Background(), validRequest(), recipient, validConfig())
+	result, err := sender.Send(context.Background(), validRequest(), deliveryWithDestination(recipient))
 	if err != nil {
 		t.Fatalf("Send() error = %v", err)
 	}
@@ -104,8 +104,9 @@ func TestSendOmitsSenderPrefixForTopicMode(t *testing.T) {
 	}))
 	defer server.Close()
 
-	recipient := notify.Recipient{
+	recipient := notify.Destination{
 		ID:                       "ops",
+		Type:                     notify.ChannelTelegram,
 		TelegramDeliveryMode:     notify.TelegramDeliveryModeTopics,
 		TelegramTopicGroupChatID: "-1001234567890",
 		Enabled:                  true,
@@ -120,7 +121,7 @@ func TestSendOmitsSenderPrefixForTopicMode(t *testing.T) {
 		},
 	}
 	sender := Sender{client: server.Client(), baseURL: server.URL, topicStore: store}
-	result, err := sender.Send(context.Background(), validRequest(), recipient, validConfig())
+	result, err := sender.Send(context.Background(), validRequest(), deliveryWithDestination(recipient))
 	if err != nil {
 		t.Fatalf("Send() error = %v", err)
 	}
@@ -178,15 +179,16 @@ func TestSendTopicModeRequiresKnownAssociationScopedByRecipientAndChat(t *testin
 			},
 		},
 	}
-	recipient := notify.Recipient{
+	recipient := notify.Destination{
 		ID:                       "ops",
+		Type:                     notify.ChannelTelegram,
 		TelegramDeliveryMode:     notify.TelegramDeliveryModeTopics,
 		TelegramTopicGroupChatID: "-1001234567890",
 		Enabled:                  true,
 	}
 	sender := Sender{client: server.Client(), baseURL: server.URL, topicStore: store}
 
-	result, err := sender.Send(context.Background(), validRequest(), recipient, validConfig())
+	result, err := sender.Send(context.Background(), validRequest(), deliveryWithDestination(recipient))
 	if err != nil {
 		t.Fatalf("Send() error = %v", err)
 	}
@@ -237,15 +239,16 @@ func TestSendTopicModeCreatesTopicOnCacheMissAndSendsToCreatedThread(t *testing.
 	defer server.Close()
 
 	store := &memoryTopicStore{state: telegramtopics.NewState(time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC))}
-	recipient := notify.Recipient{
+	recipient := notify.Destination{
 		ID:                       "ops",
+		Type:                     notify.ChannelTelegram,
 		TelegramDeliveryMode:     notify.TelegramDeliveryModeTopics,
 		TelegramTopicGroupChatID: "-1001234567890",
 		Enabled:                  true,
 	}
 	sender := Sender{client: server.Client(), baseURL: server.URL, topicStore: store}
 
-	result, err := sender.Send(context.Background(), validRequest(), recipient, validConfig())
+	result, err := sender.Send(context.Background(), validRequest(), deliveryWithDestination(recipient))
 	if err != nil {
 		t.Fatalf("Send() error = %v", err)
 	}
@@ -283,15 +286,16 @@ func TestSendTopicModeAbortsBeforeCreatingTopicWhenStateWriteIsNotPrepared(t *te
 		state:      telegramtopics.NewState(time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)),
 		prepareErr: errors.New("state file is not writable"),
 	}
-	recipient := notify.Recipient{
+	recipient := notify.Destination{
 		ID:                       "ops",
+		Type:                     notify.ChannelTelegram,
 		TelegramDeliveryMode:     notify.TelegramDeliveryModeTopics,
 		TelegramTopicGroupChatID: "-1001234567890",
 		Enabled:                  true,
 	}
 	sender := Sender{client: server.Client(), baseURL: server.URL, topicStore: store}
 
-	result, err := sender.Send(context.Background(), validRequest(), recipient, validConfig())
+	result, err := sender.Send(context.Background(), validRequest(), deliveryWithDestination(recipient))
 	if err == nil {
 		t.Fatal("Send() error = nil, want state preparation failure")
 	}
@@ -328,8 +332,9 @@ func TestSendTopicModeCreatesAtMostOneTopicForConcurrentCacheMiss(t *testing.T) 
 	defer server.Close()
 
 	store := &memoryTopicStore{state: telegramtopics.NewState(time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC))}
-	recipient := notify.Recipient{
+	recipient := notify.Destination{
 		ID:                       "ops",
+		Type:                     notify.ChannelTelegram,
 		TelegramDeliveryMode:     notify.TelegramDeliveryModeTopics,
 		TelegramTopicGroupChatID: "-1001234567890",
 		Enabled:                  true,
@@ -342,7 +347,7 @@ func TestSendTopicModeCreatesAtMostOneTopicForConcurrentCacheMiss(t *testing.T) 
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err := sender.Send(context.Background(), validRequest(), recipient, validConfig())
+			_, err := sender.Send(context.Background(), validRequest(), deliveryWithDestination(recipient))
 			errors <- err
 		}()
 	}
@@ -478,8 +483,9 @@ func TestSendTopicModeFullFlowUsesTemporaryStateRepository(t *testing.T) {
 	defer server.Close()
 
 	repository := telegramtopics.NewFileRepository(filepath.Join(t.TempDir(), "telegram-topics.json"))
-	recipient := notify.Recipient{
+	recipient := notify.Destination{
 		ID:                       "ops",
+		Type:                     notify.ChannelTelegram,
 		TelegramDeliveryMode:     notify.TelegramDeliveryModeTopics,
 		TelegramTopicGroupChatID: "-1001234567890",
 		Enabled:                  true,
@@ -487,7 +493,7 @@ func TestSendTopicModeFullFlowUsesTemporaryStateRepository(t *testing.T) {
 	sender := Sender{client: server.Client(), baseURL: server.URL, topicStore: repository}
 
 	for i := 0; i < 2; i++ {
-		result, err := sender.Send(context.Background(), validRequest(), recipient, validConfig())
+		result, err := sender.Send(context.Background(), validRequest(), deliveryWithDestination(recipient))
 		if err != nil {
 			t.Fatalf("Send(%d) error = %v", i, err)
 		}
@@ -550,15 +556,16 @@ func TestSendTopicModeRecoversStaleKnownTopicWithOneReplacement(t *testing.T) {
 			Associations: []telegramtopics.Association{validTopicAssociation("ops", "-1001234567890", "BackupJob", 4)},
 		},
 	}
-	recipient := notify.Recipient{
+	recipient := notify.Destination{
 		ID:                       "ops",
+		Type:                     notify.ChannelTelegram,
 		TelegramDeliveryMode:     notify.TelegramDeliveryModeTopics,
 		TelegramTopicGroupChatID: "-1001234567890",
 		Enabled:                  true,
 	}
 	sender := Sender{client: server.Client(), baseURL: server.URL, topicStore: store}
 
-	result, err := sender.Send(context.Background(), validRequest(), recipient, validConfig())
+	result, err := sender.Send(context.Background(), validRequest(), deliveryWithDestination(recipient))
 	if err != nil {
 		t.Fatalf("Send() error = %v", err)
 	}
@@ -613,10 +620,10 @@ func TestSendTopicModeReturnsDeliveryFailureWhenRecoveryRetryFails(t *testing.T)
 			Associations: []telegramtopics.Association{validTopicAssociation("ops", "-1001234567890", "BackupJob", 4)},
 		},
 	}
-	recipient := notify.Recipient{ID: "ops", TelegramDeliveryMode: notify.TelegramDeliveryModeTopics, TelegramTopicGroupChatID: "-1001234567890", Enabled: true}
+	recipient := notify.Destination{ID: "ops", Type: notify.ChannelTelegram, TelegramDeliveryMode: notify.TelegramDeliveryModeTopics, TelegramTopicGroupChatID: "-1001234567890", Enabled: true}
 	sender := Sender{client: server.Client(), baseURL: server.URL, topicStore: store}
 
-	result, err := sender.Send(context.Background(), validRequest(), recipient, validConfig())
+	result, err := sender.Send(context.Background(), validRequest(), deliveryWithDestination(recipient))
 	if err == nil {
 		t.Fatal("Send() error = nil, want retry delivery failure")
 	}
@@ -654,10 +661,10 @@ func TestSendTopicModeDoesNotRecoverNonStaleProviderFailure(t *testing.T) {
 			Associations: []telegramtopics.Association{validTopicAssociation("ops", "-1001234567890", "BackupJob", 4)},
 		},
 	}
-	recipient := notify.Recipient{ID: "ops", TelegramDeliveryMode: notify.TelegramDeliveryModeTopics, TelegramTopicGroupChatID: "-1001234567890", Enabled: true}
+	recipient := notify.Destination{ID: "ops", Type: notify.ChannelTelegram, TelegramDeliveryMode: notify.TelegramDeliveryModeTopics, TelegramTopicGroupChatID: "-1001234567890", Enabled: true}
 	sender := Sender{client: server.Client(), baseURL: server.URL, topicStore: store}
 
-	result, err := sender.Send(context.Background(), validRequest(), recipient, validConfig())
+	result, err := sender.Send(context.Background(), validRequest(), deliveryWithDestination(recipient))
 	if err == nil {
 		t.Fatal("Send() error = nil, want delivery failure")
 	}
@@ -684,10 +691,10 @@ func TestSendTopicModeMapsCreatePermissionFailureWithoutLeakingToken(t *testing.
 	defer server.Close()
 
 	store := &memoryTopicStore{state: telegramtopics.NewState(time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC))}
-	recipient := notify.Recipient{ID: "ops", TelegramDeliveryMode: notify.TelegramDeliveryModeTopics, TelegramTopicGroupChatID: "-1001234567890", Enabled: true}
+	recipient := notify.Destination{ID: "ops", Type: notify.ChannelTelegram, TelegramDeliveryMode: notify.TelegramDeliveryModeTopics, TelegramTopicGroupChatID: "-1001234567890", Enabled: true}
 	sender := Sender{client: server.Client(), baseURL: server.URL, topicStore: store}
 
-	result, err := sender.Send(context.Background(), validRequest(), recipient, validConfig())
+	result, err := sender.Send(context.Background(), validRequest(), deliveryWithDestination(recipient))
 	if err == nil {
 		t.Fatal("Send() error = nil, want delivery failure")
 	}
@@ -706,10 +713,10 @@ func TestSendTopicModeMapsMalformedStateToInternalError(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 	repository := telegramtopics.NewFileRepository(statePath)
-	recipient := notify.Recipient{ID: "ops", TelegramDeliveryMode: notify.TelegramDeliveryModeTopics, TelegramTopicGroupChatID: "-1001234567890", Enabled: true}
+	recipient := notify.Destination{ID: "ops", Type: notify.ChannelTelegram, TelegramDeliveryMode: notify.TelegramDeliveryModeTopics, TelegramTopicGroupChatID: "-1001234567890", Enabled: true}
 	sender := Sender{client: failingClient{}, topicStore: repository}
 
-	result, err := sender.Send(context.Background(), validRequest(), recipient, validConfig())
+	result, err := sender.Send(context.Background(), validRequest(), deliveryWithDestination(recipient))
 	if err == nil {
 		t.Fatal("Send() error = nil, want internal state error")
 	}
@@ -726,7 +733,7 @@ func TestSendReturnsInvalidConfigForMissingTokenOrDestination(t *testing.T) {
 	config := validConfig()
 	delete(config.Secrets, secretToken)
 
-	result, err := NewSender(nil).Send(context.Background(), validRequest(), validRecipient(), config)
+	result, err := NewSender(nil).Send(context.Background(), validRequest(), deliveryWithAccount(config))
 	if err == nil {
 		t.Fatal("Send() error = nil, want invalid_config")
 	}
@@ -737,7 +744,7 @@ func TestSendReturnsInvalidConfigForMissingTokenOrDestination(t *testing.T) {
 
 	recipient := validRecipient()
 	recipient.TelegramChatID = ""
-	_, err = NewSender(nil).Send(context.Background(), validRequest(), recipient, validConfig())
+	_, err = NewSender(nil).Send(context.Background(), validRequest(), deliveryWithDestination(recipient))
 	assertDiagnosticCategory(t, err, diagnostics.CategoryInvalidConfig)
 }
 
@@ -749,7 +756,7 @@ func TestSendMapsProviderHTTPFailureToDeliveryFailureWithoutLeakingToken(t *test
 	defer server.Close()
 
 	sender := Sender{client: server.Client(), baseURL: server.URL}
-	result, err := sender.Send(context.Background(), validRequest(), validRecipient(), validConfig())
+	result, err := sender.Send(context.Background(), validRequest(), validDelivery())
 	if err == nil {
 		t.Fatal("Send() error = nil, want delivery_failure")
 	}
@@ -765,7 +772,7 @@ func TestSendMapsProviderHTTPFailureToDeliveryFailureWithoutLeakingToken(t *test
 func TestSendMapsClientFailureToDeliveryFailureWithoutLeakingToken(t *testing.T) {
 	sender := NewSender(failingClient{})
 
-	result, err := sender.Send(context.Background(), validRequest(), validRecipient(), validConfig())
+	result, err := sender.Send(context.Background(), validRequest(), validDelivery())
 	if err == nil {
 		t.Fatal("Send() error = nil, want delivery_failure")
 	}
@@ -784,7 +791,7 @@ func TestSendMapsTelegramOKFalseToDeliveryFailure(t *testing.T) {
 	defer server.Close()
 
 	sender := Sender{client: server.Client(), baseURL: server.URL}
-	result, err := sender.Send(context.Background(), validRequest(), validRecipient(), validConfig())
+	result, err := sender.Send(context.Background(), validRequest(), validDelivery())
 	if err == nil {
 		t.Fatal("Send() error = nil, want delivery_failure")
 	}
@@ -798,7 +805,7 @@ func TestSendReturnsAttachmentErrorWhenAttachmentsAreRequested(t *testing.T) {
 	request := validRequest()
 	request.Attachments = []notify.Attachment{{Path: filepath.Join("tmp", "report.txt"), Filename: "report.txt"}}
 
-	result, err := NewSender(failingClient{}).Send(context.Background(), request, validRecipient(), validConfig())
+	result, err := NewSender(failingClient{}).Send(context.Background(), request, validDelivery())
 	if err == nil {
 		t.Fatal("Send() error = nil, want attachment_error")
 	}
@@ -850,23 +857,24 @@ func (s *memoryTopicStore) Update(_ context.Context, mutate func(*telegramtopics
 func validRequest() notify.Request {
 	return notify.Request{
 		SenderSystem: "BackupJob",
-		RecipientID:  "ops",
-		Channel:      notify.ChannelTelegram,
+		Priority:     notify.PriorityNormal,
 		Title:        "Backup failed",
 		Message:      "Nightly backup failed",
 	}
 }
 
-func validRecipient() notify.Recipient {
-	return notify.Recipient{
+func validRecipient() notify.Destination {
+	return notify.Destination{
 		ID:             "ops",
+		Type:           notify.ChannelTelegram,
 		TelegramChatID: "12345",
 		Enabled:        true,
 	}
 }
 
-func validConfig() notify.ChannelConfig {
-	return notify.ChannelConfig{
+func validConfig() notify.DeliveryAccount {
+	return notify.DeliveryAccount{
+		ID:      "telegram-main",
 		Type:    notify.ChannelTelegram,
 		Enabled: true,
 		Settings: map[string]string{
@@ -876,6 +884,28 @@ func validConfig() notify.ChannelConfig {
 			secretToken: "123456:ABCDEF",
 		},
 		AttachmentPolicy: notify.AttachmentPolicyLimited,
+	}
+}
+
+func validDelivery() notify.ResolvedDelivery {
+	return deliveryWithDestination(validRecipient())
+}
+
+func deliveryWithAccount(account notify.DeliveryAccount) notify.ResolvedDelivery {
+	delivery := validDelivery()
+	delivery.Account = account
+	delivery.AccountID = account.ID
+	return delivery
+}
+
+func deliveryWithDestination(destination notify.Destination) notify.ResolvedDelivery {
+	account := validConfig()
+	return notify.ResolvedDelivery{
+		RouteID:       "backup-high",
+		AccountID:     account.ID,
+		DestinationID: destination.ID,
+		Account:       account,
+		Destination:   destination,
 	}
 }
 

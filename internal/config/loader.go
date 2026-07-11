@@ -5,35 +5,68 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/rodrigogml/NotiCLI/internal/diagnostics"
 	"github.com/rodrigogml/NotiCLI/internal/notify"
 )
 
 type File struct {
-	Recipients map[string]Recipient `json:"recipients"`
-	Channels   map[string]Channel   `json:"channels"`
-	Defaults   map[string]string    `json:"defaults"`
+	Recipients       map[string]Destination     `json:"recipients"`
+	Channels         map[string]DeliveryAccount `json:"channels"`
+	Destinations     map[string]Destination     `json:"destinations"`
+	DeliveryAccounts map[string]DeliveryAccount `json:"delivery_accounts"`
+	Routes           []Route                    `json:"routes"`
+	CatchAll         CatchAll                   `json:"catch_all"`
+	Logging          Logging                    `json:"logging"`
 }
 
-type Recipient struct {
+type Destination struct {
 	ID                       string `json:"id"`
 	Name                     string `json:"name"`
+	Type                     string `json:"type"`
 	Email                    string `json:"email"`
 	TelegramChatID           string `json:"telegram_chat_id"`
 	TelegramDeliveryMode     string `json:"telegram_delivery_mode"`
 	TelegramTopicGroupChatID string `json:"telegram_topic_group_chat_id"`
 	TelegramTopicGroupName   string `json:"telegram_topic_group_name"`
+	MessageThreadID          int    `json:"message_thread_id"`
 	SlackDest                string `json:"slack_destination"`
 	Enabled                  *bool  `json:"enabled"`
 }
 
-type Channel struct {
+type DeliveryAccount struct {
+	ID          string            `json:"id"`
 	Type        string            `json:"type"`
 	Enabled     *bool             `json:"enabled"`
 	Settings    map[string]string `json:"settings"`
 	Secrets     map[string]string `json:"secrets"`
 	Attachments string            `json:"attachments"`
+}
+
+type Route struct {
+	ID         string     `json:"id"`
+	Match      RouteMatch `json:"match"`
+	Deliveries []Delivery `json:"deliveries"`
+}
+
+type RouteMatch struct {
+	Senders    []string `json:"senders"`
+	Categories []string `json:"categories"`
+	Priorities []string `json:"priorities"`
+}
+
+type Delivery struct {
+	Account     string `json:"account"`
+	Destination string `json:"destination"`
+}
+
+type CatchAll struct {
+	Deliveries []Delivery `json:"deliveries"`
+}
+
+type Logging struct {
+	Path string `json:"path"`
 }
 
 func Load(path string) (notify.Configuration, error) {
@@ -49,8 +82,11 @@ func Load(path string) (notify.Configuration, error) {
 	if err := json.Unmarshal(data, &file); err != nil {
 		return notify.Configuration{}, diagnostics.New(diagnostics.CategoryInvalidConfig, fmt.Sprintf("configuration file is not valid JSON: %s", path))
 	}
+	if len(file.Recipients) > 0 || len(file.Channels) > 0 {
+		return notify.Configuration{}, diagnostics.New(diagnostics.CategoryInvalidConfig, "legacy configuration keys recipients/channels are no longer supported; use destinations/delivery_accounts/routes/catch_all")
+	}
 
-	configuration := file.toDomain()
+	configuration := file.toDomain(defaultLogPath(path))
 	if err := configuration.Validate(); err != nil {
 		return notify.Configuration{}, err
 	}
@@ -58,54 +94,90 @@ func Load(path string) (notify.Configuration, error) {
 	return configuration, nil
 }
 
-func (f File) toDomain() notify.Configuration {
-	recipients := make(map[string]notify.Recipient, len(f.Recipients))
-	for key, recipient := range f.Recipients {
+func (f File) toDomain(defaultLoggingPath string) notify.Configuration {
+	destinations := make(map[string]notify.Destination, len(f.Destinations))
+	for key, destination := range f.Destinations {
 		enabled := true
-		if recipient.Enabled != nil {
-			enabled = *recipient.Enabled
+		if destination.Enabled != nil {
+			enabled = *destination.Enabled
 		}
-		id := recipient.ID
+		id := destination.ID
 		if id == "" {
 			id = key
 		}
-		recipients[key] = notify.Recipient{
+		destinations[key] = notify.Destination{
 			ID:                       id,
-			Name:                     recipient.Name,
-			Email:                    recipient.Email,
-			TelegramChatID:           recipient.TelegramChatID,
-			TelegramDeliveryMode:     recipient.TelegramDeliveryMode,
-			TelegramTopicGroupChatID: recipient.TelegramTopicGroupChatID,
-			TelegramTopicGroupName:   recipient.TelegramTopicGroupName,
-			SlackDest:                recipient.SlackDest,
+			Name:                     destination.Name,
+			Type:                     destination.Type,
+			Email:                    destination.Email,
+			TelegramChatID:           destination.TelegramChatID,
+			TelegramDeliveryMode:     destination.TelegramDeliveryMode,
+			TelegramTopicGroupChatID: destination.TelegramTopicGroupChatID,
+			TelegramTopicGroupName:   destination.TelegramTopicGroupName,
+			MessageThreadID:          destination.MessageThreadID,
+			SlackDest:                destination.SlackDest,
 			Enabled:                  enabled,
 		}
 	}
 
-	channels := make(map[string]notify.ChannelConfig, len(f.Channels))
-	for key, channel := range f.Channels {
+	accounts := make(map[string]notify.DeliveryAccount, len(f.DeliveryAccounts))
+	for key, account := range f.DeliveryAccounts {
 		enabled := true
-		if channel.Enabled != nil {
-			enabled = *channel.Enabled
+		if account.Enabled != nil {
+			enabled = *account.Enabled
 		}
-		channelType := channel.Type
-		if channelType == "" {
-			channelType = key
+		id := account.ID
+		if id == "" {
+			id = key
 		}
-		channels[key] = notify.ChannelConfig{
-			Type:             channelType,
+		accounts[key] = notify.DeliveryAccount{
+			ID:               id,
+			Type:             account.Type,
 			Enabled:          enabled,
-			Settings:         cloneMap(channel.Settings),
-			Secrets:          cloneMap(channel.Secrets),
-			AttachmentPolicy: attachmentPolicyOrDefault(channel.Attachments),
+			Settings:         cloneMap(account.Settings),
+			Secrets:          cloneMap(account.Secrets),
+			AttachmentPolicy: attachmentPolicyOrDefault(account.Attachments),
 		}
 	}
 
-	return notify.Configuration{
-		Recipients: recipients,
-		Channels:   channels,
-		Defaults:   cloneMap(f.Defaults),
+	logPath := f.Logging.Path
+	if logPath == "" {
+		logPath = defaultLoggingPath
 	}
+	return notify.Configuration{
+		Destinations:     destinations,
+		DeliveryAccounts: accounts,
+		Routes:           routesToDomain(f.Routes),
+		CatchAll:         notify.Route{ID: "catch_all", Deliveries: deliveriesToDomain(f.CatchAll.Deliveries)},
+		Logging:          notify.LoggingConfig{Path: logPath},
+	}
+}
+
+func routesToDomain(routes []Route) []notify.Route {
+	out := make([]notify.Route, 0, len(routes))
+	for _, route := range routes {
+		out = append(out, notify.Route{
+			ID: route.ID,
+			Match: notify.RouteMatch{
+				Senders:    append([]string(nil), route.Match.Senders...),
+				Categories: append([]string(nil), route.Match.Categories...),
+				Priorities: append([]string(nil), route.Match.Priorities...),
+			},
+			Deliveries: deliveriesToDomain(route.Deliveries),
+		})
+	}
+	return out
+}
+
+func deliveriesToDomain(deliveries []Delivery) []notify.Delivery {
+	out := make([]notify.Delivery, 0, len(deliveries))
+	for _, delivery := range deliveries {
+		out = append(out, notify.Delivery{
+			Account:     delivery.Account,
+			Destination: delivery.Destination,
+		})
+	}
+	return out
 }
 
 func attachmentPolicyOrDefault(value string) notify.AttachmentPolicy {
@@ -124,4 +196,8 @@ func cloneMap(source map[string]string) map[string]string {
 		target[key] = value
 	}
 	return target
+}
+
+func defaultLogPath(configPath string) string {
+	return filepath.Join(filepath.Dir(configPath), "noticli.delivery.log")
 }

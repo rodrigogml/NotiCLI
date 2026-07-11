@@ -52,12 +52,18 @@ const (
 type Request struct {
 	ConfigPath   string
 	SenderSystem string
-	RecipientID  string
-	Channel      string
+	Category     string
+	Priority     string
 	Title        string
 	Message      string
 	Attachments  []Attachment
 }
+
+const (
+	PriorityHigh   = "HIGH"
+	PriorityNormal = "NORMAL"
+	PriorityLow    = "LOW"
+)
 
 func (r Request) Validate() error {
 	if strings.TrimSpace(r.SenderSystem) == "" {
@@ -66,11 +72,8 @@ func (r Request) Validate() error {
 	if len([]rune(strings.TrimSpace(r.SenderSystem))) > MaxSenderSystemLength {
 		return diagnostics.New(diagnostics.CategoryInvalidInput, fmt.Sprintf("sender_system must be at most %d characters", MaxSenderSystemLength))
 	}
-	if strings.TrimSpace(r.RecipientID) == "" {
-		return diagnostics.New(diagnostics.CategoryInvalidInput, "recipient_id is required")
-	}
-	if !IsSupportedChannel(r.Channel) {
-		return diagnostics.New(diagnostics.CategoryInvalidInput, fmt.Sprintf("unsupported channel %q", r.Channel))
+	if !IsValidPriority(r.EffectivePriority()) {
+		return diagnostics.New(diagnostics.CategoryInvalidInput, fmt.Sprintf("unsupported priority %q", r.Priority))
 	}
 	if strings.TrimSpace(r.Title) == "" {
 		return diagnostics.New(diagnostics.CategoryInvalidInput, "title is required")
@@ -86,39 +89,63 @@ func (r Request) Validate() error {
 	return nil
 }
 
+func (r Request) EffectivePriority() string {
+	priority := strings.ToUpper(strings.TrimSpace(r.Priority))
+	if priority == "" {
+		return PriorityNormal
+	}
+	return priority
+}
+
 type Configuration struct {
-	Recipients map[string]Recipient
-	Channels   map[string]ChannelConfig
-	Defaults   map[string]string
+	Destinations     map[string]Destination
+	DeliveryAccounts map[string]DeliveryAccount
+	Routes           []Route
+	CatchAll         Route
+	Logging          LoggingConfig
 }
 
 type ResolvedRequest struct {
-	Request     Request
-	Recipient   Recipient
-	Channel     ChannelConfig
-	Destination string
+	Request    Request
+	Deliveries []ResolvedDelivery
+}
+
+type ResolvedDelivery struct {
+	RouteID       string
+	AccountID     string
+	DestinationID string
+	Account       DeliveryAccount
+	Destination   Destination
 }
 
 func (c Configuration) Validate() error {
-	if len(c.Recipients) == 0 {
-		return diagnostics.New(diagnostics.CategoryInvalidConfig, "at least one recipient is required")
+	if len(c.Destinations) == 0 {
+		return diagnostics.New(diagnostics.CategoryInvalidConfig, "at least one destination is required")
 	}
-	if len(c.Channels) == 0 {
-		return diagnostics.New(diagnostics.CategoryInvalidConfig, "at least one channel config is required")
+	if len(c.DeliveryAccounts) == 0 {
+		return diagnostics.New(diagnostics.CategoryInvalidConfig, "at least one delivery account is required")
 	}
-	for id, recipient := range c.Recipients {
-		if strings.TrimSpace(recipient.ID) == "" {
-			recipient.ID = id
+	if len(c.CatchAll.Deliveries) == 0 {
+		return diagnostics.New(diagnostics.CategoryInvalidConfig, "catch_all deliveries are required")
+	}
+	for id, destination := range c.Destinations {
+		if strings.TrimSpace(destination.ID) == "" {
+			destination.ID = id
 		}
-		if err := recipient.Validate(); err != nil {
+		if err := destination.Validate(); err != nil {
 			return err
 		}
 	}
-	for channel, config := range c.Channels {
-		if strings.TrimSpace(config.Type) == "" {
-			config.Type = channel
+	for id, account := range c.DeliveryAccounts {
+		if strings.TrimSpace(account.ID) == "" {
+			account.ID = id
 		}
-		if err := config.Validate(); err != nil {
+		if err := account.Validate(); err != nil {
+			return err
+		}
+	}
+	for _, route := range append(c.Routes, c.CatchAll) {
+		if err := c.validateRoute(route); err != nil {
 			return err
 		}
 	}
@@ -130,37 +157,80 @@ func (c Configuration) Resolve(request Request) (ResolvedRequest, error) {
 		return ResolvedRequest{}, err
 	}
 
-	recipient, ok := c.Recipients[request.RecipientID]
-	if !ok {
-		return ResolvedRequest{}, diagnostics.New(diagnostics.CategoryMissingConfig, fmt.Sprintf("recipient %q is not configured", request.RecipientID))
+	matched := make([]Route, 0, len(c.Routes))
+	for _, route := range c.Routes {
+		if route.Matches(request) {
+			matched = append(matched, route)
+		}
+	}
+	if len(matched) == 0 {
+		matched = append(matched, c.CatchAll)
 	}
 
-	channel, ok := c.Channels[request.Channel]
-	if !ok {
-		return ResolvedRequest{}, diagnostics.New(diagnostics.CategoryMissingConfig, fmt.Sprintf("channel %q is not configured", request.Channel))
-	}
-	if err := recipient.ValidateForChannel(request.Channel); err != nil {
-		return ResolvedRequest{}, err
-	}
-	if err := channel.ValidateForDelivery(request.Channel); err != nil {
-		return ResolvedRequest{}, err
+	deliveries := make([]ResolvedDelivery, 0)
+	for _, route := range matched {
+		for _, delivery := range route.Deliveries {
+			account, ok := c.DeliveryAccounts[delivery.Account]
+			if !ok {
+				return ResolvedRequest{}, diagnostics.New(diagnostics.CategoryMissingConfig, fmt.Sprintf("delivery account %q is not configured", delivery.Account))
+			}
+			destination, ok := c.Destinations[delivery.Destination]
+			if !ok {
+				return ResolvedRequest{}, diagnostics.New(diagnostics.CategoryMissingConfig, fmt.Sprintf("destination %q is not configured", delivery.Destination))
+			}
+			if err := account.ValidateForDelivery(destination.Type); err != nil {
+				return ResolvedRequest{}, err
+			}
+			if err := destination.ValidateForAccount(account.Type); err != nil {
+				return ResolvedRequest{}, err
+			}
+			deliveries = append(deliveries, ResolvedDelivery{
+				RouteID:       route.ID,
+				AccountID:     delivery.Account,
+				DestinationID: delivery.Destination,
+				Account:       account,
+				Destination:   destination,
+			})
+		}
 	}
 
-	destination, _ := recipient.DestinationFor(request.Channel)
 	return ResolvedRequest{
-		Request:     request,
-		Recipient:   recipient,
-		Channel:     channel,
-		Destination: destination,
+		Request:    request,
+		Deliveries: deliveries,
 	}, nil
 }
 
 func (c Configuration) SecretValues() []string {
 	var secrets []string
-	for _, channel := range c.Channels {
-		secrets = append(secrets, channel.SecretValues()...)
+	for _, account := range c.DeliveryAccounts {
+		secrets = append(secrets, account.SecretValues()...)
 	}
 	return secrets
+}
+
+func (c Configuration) validateRoute(route Route) error {
+	if len(route.Deliveries) == 0 {
+		return diagnostics.New(diagnostics.CategoryInvalidConfig, fmt.Sprintf("route %q deliveries are required", route.ID))
+	}
+	for _, priority := range route.Match.Priorities {
+		if !IsValidPriority(priority) {
+			return diagnostics.New(diagnostics.CategoryInvalidConfig, fmt.Sprintf("route %q has unsupported priority %q", route.ID, priority))
+		}
+	}
+	for _, delivery := range route.Deliveries {
+		account, ok := c.DeliveryAccounts[delivery.Account]
+		if !ok {
+			return diagnostics.New(diagnostics.CategoryInvalidConfig, fmt.Sprintf("route %q references unknown delivery account %q", route.ID, delivery.Account))
+		}
+		destination, ok := c.Destinations[delivery.Destination]
+		if !ok {
+			return diagnostics.New(diagnostics.CategoryInvalidConfig, fmt.Sprintf("route %q references unknown destination %q", route.ID, delivery.Destination))
+		}
+		if account.Type != destination.Type {
+			return diagnostics.ForChannel(diagnostics.CategoryInvalidConfig, destination.Type, fmt.Sprintf("route %q uses %s account %q for %s destination %q", route.ID, account.Type, delivery.Account, destination.Type, delivery.Destination))
+		}
+	}
+	return nil
 }
 
 type Attachment struct {
@@ -184,12 +254,9 @@ func (a Attachment) EffectiveFilename() string {
 	return filepath.Base(a.Path)
 }
 
-func ValidateAttachments(request Request, channel ChannelConfig) ([]Attachment, error) {
+func ValidateAttachments(request Request) ([]Attachment, error) {
 	if len(request.Attachments) == 0 {
 		return nil, nil
-	}
-	if channel.AttachmentPolicy == AttachmentPolicyUnsupported {
-		return nil, diagnostics.ForChannel(diagnostics.CategoryAttachmentError, request.Channel, "attachments are not supported for channel")
 	}
 
 	attachments := make([]Attachment, 0, len(request.Attachments))
@@ -245,14 +312,16 @@ func validateAttachment(attachment Attachment) (Attachment, error) {
 	return attachment, nil
 }
 
-type Recipient struct {
+type Destination struct {
 	ID                       string
 	Name                     string
+	Type                     string
 	Email                    string
 	TelegramChatID           string
 	TelegramDeliveryMode     string
 	TelegramTopicGroupChatID string
 	TelegramTopicGroupName   string
+	MessageThreadID          int
 	SlackDest                string
 	Enabled                  bool
 }
@@ -260,92 +329,81 @@ type Recipient struct {
 const (
 	TelegramDeliveryModePrivate = "private"
 	TelegramDeliveryModeTopics  = "topics"
+	TelegramDeliveryModeThread  = "thread"
 )
 
-func (r Recipient) Validate() error {
-	if strings.TrimSpace(r.ID) == "" {
-		return diagnostics.New(diagnostics.CategoryInvalidConfig, "recipient id is required")
+func (d Destination) Validate() error {
+	if strings.TrimSpace(d.ID) == "" {
+		return diagnostics.New(diagnostics.CategoryInvalidConfig, "destination id is required")
 	}
-	if !r.hasValidTelegramDeliveryMode() {
-		return diagnostics.ForChannel(diagnostics.CategoryInvalidConfig, ChannelTelegram, fmt.Sprintf("recipient %q has unsupported telegram_delivery_mode %q", r.ID, r.TelegramDeliveryMode))
+	if !IsSupportedChannel(d.Type) {
+		return diagnostics.New(diagnostics.CategoryInvalidConfig, fmt.Sprintf("unsupported destination type %q", d.Type))
+	}
+	if !d.Enabled {
+		return diagnostics.New(diagnostics.CategoryInvalidConfig, fmt.Sprintf("destination %q is disabled", d.ID))
+	}
+	if d.Type == ChannelTelegram && !d.hasValidTelegramDeliveryMode() {
+		return diagnostics.ForChannel(diagnostics.CategoryInvalidConfig, ChannelTelegram, fmt.Sprintf("destination %q has unsupported telegram_delivery_mode %q", d.ID, d.TelegramDeliveryMode))
+	}
+	if _, ok := d.Address(); !ok {
+		return diagnostics.ForChannel(diagnostics.CategoryInvalidConfig, d.Type, fmt.Sprintf("destination %q has no configured address", d.ID))
+	}
+	if d.EffectiveTelegramDeliveryMode() == TelegramDeliveryModeThread && d.MessageThreadID <= 0 {
+		return diagnostics.ForChannel(diagnostics.CategoryInvalidConfig, ChannelTelegram, fmt.Sprintf("destination %q uses thread mode without message_thread_id", d.ID))
 	}
 	return nil
 }
 
-func (r Recipient) ValidateForChannel(channel string) error {
-	if err := r.Validate(); err != nil {
+func (d Destination) ValidateForAccount(accountType string) error {
+	if err := d.Validate(); err != nil {
 		return err
 	}
-	if !r.Enabled {
-		return diagnostics.New(diagnostics.CategoryInvalidConfig, fmt.Sprintf("recipient %q is disabled", r.ID))
-	}
-	if channel == ChannelTelegram {
-		if err := r.validateTelegramDestination(); err != nil {
-			return err
-		}
-		return nil
-	}
-	if _, ok := r.DestinationFor(channel); !ok {
-		return diagnostics.ForChannel(diagnostics.CategoryInvalidConfig, channel, fmt.Sprintf("recipient %q has no configured destination", r.ID))
+	if d.Type != accountType {
+		return diagnostics.ForChannel(diagnostics.CategoryInvalidConfig, accountType, fmt.Sprintf("destination type %q does not match delivery account type", d.Type))
 	}
 	return nil
 }
 
-func (r Recipient) DestinationFor(channel string) (string, bool) {
-	switch channel {
+func (d Destination) Address() (string, bool) {
+	switch d.Type {
 	case ChannelEmail:
-		return strings.TrimSpace(r.Email), strings.TrimSpace(r.Email) != ""
+		return strings.TrimSpace(d.Email), strings.TrimSpace(d.Email) != ""
 	case ChannelTelegram:
-		switch r.EffectiveTelegramDeliveryMode() {
+		switch d.EffectiveTelegramDeliveryMode() {
 		case TelegramDeliveryModePrivate:
-			return strings.TrimSpace(r.TelegramChatID), strings.TrimSpace(r.TelegramChatID) != ""
-		case TelegramDeliveryModeTopics:
-			destination := strings.TrimSpace(r.TelegramTopicGroupChatID)
+			return strings.TrimSpace(d.TelegramChatID), strings.TrimSpace(d.TelegramChatID) != ""
+		case TelegramDeliveryModeTopics, TelegramDeliveryModeThread:
+			destination := strings.TrimSpace(d.TelegramTopicGroupChatID)
 			return destination, destination != ""
 		default:
 			return "", false
 		}
 	case ChannelSlack:
-		return strings.TrimSpace(r.SlackDest), strings.TrimSpace(r.SlackDest) != ""
+		return strings.TrimSpace(d.SlackDest), strings.TrimSpace(d.SlackDest) != ""
 	default:
 		return "", false
 	}
 }
 
-func (r Recipient) EffectiveTelegramDeliveryMode() string {
-	mode := strings.TrimSpace(r.TelegramDeliveryMode)
+func (d Destination) EffectiveTelegramDeliveryMode() string {
+	mode := strings.TrimSpace(d.TelegramDeliveryMode)
 	if mode == "" {
 		return TelegramDeliveryModePrivate
 	}
 	return mode
 }
 
-func (r Recipient) hasValidTelegramDeliveryMode() bool {
-	switch r.EffectiveTelegramDeliveryMode() {
-	case TelegramDeliveryModePrivate, TelegramDeliveryModeTopics:
+func (d Destination) hasValidTelegramDeliveryMode() bool {
+	switch d.EffectiveTelegramDeliveryMode() {
+	case TelegramDeliveryModePrivate, TelegramDeliveryModeTopics, TelegramDeliveryModeThread:
 		return true
 	default:
 		return false
 	}
 }
 
-func (r Recipient) validateTelegramDestination() error {
-	switch r.EffectiveTelegramDeliveryMode() {
-	case TelegramDeliveryModePrivate:
-		if strings.TrimSpace(r.TelegramChatID) == "" {
-			return diagnostics.ForChannel(diagnostics.CategoryInvalidConfig, ChannelTelegram, fmt.Sprintf("recipient %q has no configured telegram private chat destination", r.ID))
-		}
-	case TelegramDeliveryModeTopics:
-		if strings.TrimSpace(r.TelegramTopicGroupChatID) == "" {
-			return diagnostics.ForChannel(diagnostics.CategoryInvalidConfig, ChannelTelegram, fmt.Sprintf("recipient %q has no configured telegram topic group destination", r.ID))
-		}
-	default:
-		return diagnostics.ForChannel(diagnostics.CategoryInvalidConfig, ChannelTelegram, fmt.Sprintf("recipient %q has unsupported telegram_delivery_mode %q", r.ID, r.TelegramDeliveryMode))
-	}
-	return nil
-}
-
-type ChannelConfig struct {
+type DeliveryAccount struct {
+	ID               string
 	Type             string
 	Enabled          bool
 	Settings         map[string]string
@@ -353,9 +411,12 @@ type ChannelConfig struct {
 	AttachmentPolicy AttachmentPolicy
 }
 
-func (c ChannelConfig) Validate() error {
+func (c DeliveryAccount) Validate() error {
+	if strings.TrimSpace(c.ID) == "" {
+		return diagnostics.New(diagnostics.CategoryInvalidConfig, "delivery account id is required")
+	}
 	if !IsSupportedChannel(c.Type) {
-		return diagnostics.New(diagnostics.CategoryInvalidConfig, fmt.Sprintf("unsupported channel config type %q", c.Type))
+		return diagnostics.New(diagnostics.CategoryInvalidConfig, fmt.Sprintf("unsupported delivery account type %q", c.Type))
 	}
 	if c.Settings == nil {
 		return diagnostics.ForChannel(diagnostics.CategoryInvalidConfig, c.Type, "settings are required")
@@ -369,15 +430,15 @@ func (c ChannelConfig) Validate() error {
 	return nil
 }
 
-func (c ChannelConfig) ValidateForDelivery(selectedChannel string) error {
+func (c DeliveryAccount) ValidateForDelivery(selectedChannel string) error {
 	if err := c.Validate(); err != nil {
 		return err
 	}
 	if c.Type != selectedChannel {
-		return diagnostics.ForChannel(diagnostics.CategoryInvalidConfig, selectedChannel, fmt.Sprintf("channel config type %q does not match selected channel", c.Type))
+		return diagnostics.ForChannel(diagnostics.CategoryInvalidConfig, selectedChannel, fmt.Sprintf("delivery account type %q does not match destination type", c.Type))
 	}
 	if !c.Enabled {
-		return diagnostics.ForChannel(diagnostics.CategoryInvalidConfig, selectedChannel, "channel is disabled")
+		return diagnostics.ForChannel(diagnostics.CategoryInvalidConfig, selectedChannel, "delivery account is disabled")
 	}
 	if len(c.Settings) == 0 {
 		return diagnostics.ForChannel(diagnostics.CategoryInvalidConfig, selectedChannel, "settings must not be empty")
@@ -393,7 +454,7 @@ func (c ChannelConfig) ValidateForDelivery(selectedChannel string) error {
 	return nil
 }
 
-func (c ChannelConfig) SecretValues() []string {
+func (c DeliveryAccount) SecretValues() []string {
 	secrets := make([]string, 0, len(c.Secrets))
 	for _, value := range c.Secrets {
 		if strings.TrimSpace(value) != "" {
@@ -401,6 +462,33 @@ func (c ChannelConfig) SecretValues() []string {
 		}
 	}
 	return secrets
+}
+
+type Route struct {
+	ID         string
+	Match      RouteMatch
+	Deliveries []Delivery
+}
+
+func (r Route) Matches(request Request) bool {
+	return matchAny(r.Match.Senders, request.SenderSystem) &&
+		matchAny(r.Match.Categories, request.Category) &&
+		matchAny(r.Match.Priorities, request.EffectivePriority())
+}
+
+type RouteMatch struct {
+	Senders    []string
+	Categories []string
+	Priorities []string
+}
+
+type Delivery struct {
+	Account     string
+	Destination string
+}
+
+type LoggingConfig struct {
+	Path string
 }
 
 type Result struct {
@@ -438,12 +526,21 @@ func FailureResult(category ResultCategory, channel, message string) Result {
 
 type ChannelSender interface {
 	Name() string
-	Send(ctx context.Context, request Request, recipient Recipient, config ChannelConfig) (Result, error)
+	Send(ctx context.Context, request Request, delivery ResolvedDelivery) (Result, error)
 }
 
 func IsSupportedChannel(channel string) bool {
 	switch channel {
 	case ChannelEmail, ChannelSlack, ChannelTelegram:
+		return true
+	default:
+		return false
+	}
+}
+
+func IsValidPriority(priority string) bool {
+	switch strings.ToUpper(strings.TrimSpace(priority)) {
+	case PriorityHigh, PriorityNormal, PriorityLow:
 		return true
 	default:
 		return false
@@ -457,6 +554,19 @@ func IsValidAttachmentPolicy(policy AttachmentPolicy) bool {
 	default:
 		return false
 	}
+}
+
+func matchAny(criteria []string, value string) bool {
+	if len(criteria) == 0 {
+		return true
+	}
+	value = strings.TrimSpace(value)
+	for _, criterion := range criteria {
+		if strings.TrimSpace(criterion) == value {
+			return true
+		}
+	}
+	return false
 }
 
 func RequiredSecretKeys(channel string) []string {

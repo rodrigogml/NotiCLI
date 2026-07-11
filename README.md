@@ -19,7 +19,7 @@ go test ./...
 ## Usage
 
 ```sh
-noticli send --config ./noticli.json --sender BackupJob --recipient ops --channel email --title "Backup failed" --message "Nightly backup failed on server-01"
+noticli send --config ./noticli.json --sender BackupJob --category backup --priority HIGH --title "Backup failed" --message "Nightly backup failed on server-01"
 ```
 
 ### Flags
@@ -28,11 +28,11 @@ noticli send --config ./noticli.json --sender BackupJob --recipient ops --channe
 |------|----------|-------------|
 | `--config <path>` | no | JSON configuration file override. Use only when the caller needs to override the default NotiCLI configuration. |
 | `--sender <text>` | yes | Calling system identifier, up to 20 characters. |
-| `--recipient <id>` | yes | Recipient key from the configuration file. |
-| `--channel <name>` | yes | One of `email`, `telegram` or `slack`. |
+| `--category <text>` | no | Routing category matched by configured routes. |
+| `--priority <HIGH\|NORMAL\|LOW>` | no | Routing priority. Defaults to `NORMAL`. |
 | `--title <text>` | yes | Notification title or subject. |
 | `--message <text>` | yes | Notification body. |
-| `--attach <path>` | no | Readable file attachment. May be repeated. Email supports attachments; Telegram and Slack return `attachment_error` for attachment requests. |
+| `--attach <path>` | no | Readable file attachment. May be repeated. Destinations whose delivery account does not support attachments receive the message without attachments, and the omission is logged. |
 
 ## Configuration
 
@@ -40,22 +40,31 @@ Example `noticli.json`:
 
 ```json
 {
-  "recipients": {
-    "ops": {
-      "name": "Operations",
-      "email": "ops@example.invalid",
-      "telegram_chat_id": "TELEGRAM_CHAT_ID",
-      "slack_destination": "#ops"
+  "destinations": {
+    "ops-email": {
+      "type": "email",
+      "email": "ops@example.invalid"
     },
     "ops-telegram-topics": {
-      "name": "Operations Telegram Topics",
+      "type": "telegram",
       "telegram_delivery_mode": "topics",
       "telegram_topic_group_chat_id": "TELEGRAM_SUPERGROUP_CHAT_ID",
       "telegram_topic_group_name": "Operations Notifications"
+    },
+    "ops-telegram-thread": {
+      "type": "telegram",
+      "telegram_delivery_mode": "thread",
+      "telegram_topic_group_chat_id": "TELEGRAM_SUPERGROUP_CHAT_ID",
+      "message_thread_id": 42
+    },
+    "ops-slack": {
+      "type": "slack",
+      "slack_destination": "#ops"
     }
   },
-  "channels": {
-    "email": {
+  "delivery_accounts": {
+    "smtp-main": {
+      "type": "email",
       "settings": {
         "host": "smtp.example.invalid",
         "port": "587",
@@ -68,7 +77,8 @@ Example `noticli.json`:
       },
       "attachments": "supported"
     },
-    "telegram": {
+    "telegram-main": {
+      "type": "telegram",
       "settings": {
         "parse_mode": "HTML"
       },
@@ -77,7 +87,8 @@ Example `noticli.json`:
       },
       "attachments": "unsupported"
     },
-    "slack": {
+    "slack-main": {
+      "type": "slack",
       "settings": {
         "workspace": "example"
       },
@@ -87,13 +98,32 @@ Example `noticli.json`:
       "attachments": "unsupported"
     }
   },
-  "defaults": {
-    "channel": "email"
+  "routes": [
+    {
+      "id": "backup-high",
+      "match": {
+        "senders": ["BackupJob"],
+        "categories": ["backup"],
+        "priorities": ["HIGH"]
+      },
+      "deliveries": [
+        {"account": "smtp-main", "destination": "ops-email"},
+        {"account": "telegram-main", "destination": "ops-telegram-topics"}
+      ]
+    }
+  ],
+  "catch_all": {
+    "deliveries": [
+      {"account": "smtp-main", "destination": "ops-email"}
+    ]
+  },
+  "logging": {
+    "path": ""
   }
 }
 ```
 
-Secret values are redacted from user-visible diagnostics. Do not put real credentials in examples, issue reports or shared logs.
+Secret values are redacted from user-visible diagnostics and delivery logs. Do not put real credentials in examples, issue reports or shared logs.
 
 ## Configuration Scope
 
@@ -130,28 +160,33 @@ Diagnostic output is not a secret storage boundary. Avoid putting credentials or
 
 ## Channel Setup
 
-Email requires SMTP settings under `channels.email.settings`: `host`, `port`, `from` and optional `from_name` and `username`. It requires `channels.email.secrets.smtp_password`. If `from_name` is set, it is used as the display name in the email `From` header. If `username` is omitted, NotiCLI uses `from` for SMTP authentication. Email subjects are prefixed with the calling sender as `[sender] title`.
+Routes match when every configured criterion in `match` matches the request. Missing criteria do not filter. Multiple routes can match, and every configured delivery is attempted without automatic deduplication. If no route matches, `catch_all` is required and used.
 
-Telegram requires a bot token in `channels.telegram.secrets.token`. A recipient can use one of two delivery modes:
+If `logging.path` is empty or omitted, NotiCLI writes delivery events to `noticli.delivery.log` beside the active config file. Delivery failures and attachment omissions include route, destination, account, channel type, sender, category and priority.
+
+Email requires SMTP settings under an email delivery account: `host`, `port`, `from` and optional `from_name` and `username`. It requires `secrets.smtp_password`. If `from_name` is set, it is used as the display name in the email `From` header. If `username` is omitted, NotiCLI uses `from` for SMTP authentication. Email subjects are prefixed with the calling sender as `[sender] title`.
+
+Telegram requires a bot token in a Telegram delivery account under `secrets.token`. A Telegram destination can use one of three delivery modes:
 
 - Private chat delivery: omit `telegram_delivery_mode` or set it to `private`, and set `telegram_chat_id`. Private Telegram titles are formatted as `[sender] title`.
 - Topic group delivery: set `telegram_delivery_mode` to `topics`, set `telegram_topic_group_chat_id` to a topic-enabled supergroup ID, and optionally set `telegram_topic_group_name` for diagnostics. Topic messages use the topic as sender context, so titles are sent without the `[sender]` prefix.
+- Fixed thread delivery: set `telegram_delivery_mode` to `thread`, set `telegram_topic_group_chat_id`, and set `message_thread_id`.
 
 Topic delivery stores generated sender-topic associations in a sibling state file next to the active config. For `config/noticli.json` beside the resolved executable path, the state file is `config/noticli.telegram-topics.json` in the same directory. In production, the release `config/` directory is symlinked to the centralized config tree, so the state file remains under `/opt/NotiCLI/config/`. Back up this file with the production installation; if it is lost, NotiCLI may create replacement topics because Telegram bots cannot list or find every existing topic by name. Before creating a new topic, NotiCLI verifies that the state file can be written; write failures abort the notification with an error instead of creating an untracked topic. Future assisted commands such as `/noticli_bind`, `/noticli_unbind` and `/noticli_topics` are reserved for binding or listing manually managed topics, but they are not part of the current CLI send flow.
 
-Slack requires an incoming webhook URL in `channels.slack.secrets.webhook_url` and a recipient `slack_destination`. The initial MVP sends text messages through the webhook only.
+Slack requires an incoming webhook URL in a Slack delivery account under `secrets.webhook_url` and a Slack destination `slack_destination`. The initial MVP sends text messages through the webhook only.
 
 ## Exit Codes
 
 | Code | Category | Meaning |
 |------|----------|---------|
-| `0` | `success` | The selected channel accepted the notification request. |
+| `0` | `success` | All resolved deliveries accepted the notification request. |
 | `1` | `internal_error` | Unexpected failure. |
 | `2` | `invalid_input` | Missing, empty or unsupported CLI input. |
-| `3` | `missing_config` | Configuration file, recipient or channel is missing. |
+| `3` | `missing_config` | Configuration file, destination or delivery account is missing. |
 | `4` | `invalid_config` | Configuration is malformed or incomplete. |
-| `5` | `attachment_error` | Attachment is missing, unreadable, a directory or unsupported for the channel. |
-| `6` | `delivery_failure` | Provider rejected or failed the delivery request. |
+| `5` | `attachment_error` | Attachment is missing, unreadable or a directory. |
+| `6` | `delivery_failure` | One or more providers rejected or failed delivery after all possible deliveries were attempted. |
 
 ## Portable Builds
 

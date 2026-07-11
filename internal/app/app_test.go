@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/rodrigogml/NotiCLI/internal/app"
@@ -12,36 +13,52 @@ import (
 	"github.com/rodrigogml/NotiCLI/internal/notify"
 )
 
-func TestNotifyValidatesAndDispatchesResolvedRequest(t *testing.T) {
-	sender := &fakeSender{
-		result: notify.SuccessResult(notify.ChannelEmail, "accepted"),
-	}
-	service := app.New(validConfiguration(), sender)
+func TestNotifyDispatchesAllResolvedDeliveries(t *testing.T) {
+	emailSender := &fakeSender{name: notify.ChannelEmail, result: notify.SuccessResult(notify.ChannelEmail, "email accepted")}
+	slackSender := &fakeSender{name: notify.ChannelSlack, result: notify.SuccessResult(notify.ChannelSlack, "slack accepted")}
+	service := app.New(validConfiguration(t), emailSender, slackSender)
 
-	result, err := service.Notify(context.Background(), validRequest())
+	request := validRequest()
+	request.Category = "backup"
+	request.Priority = notify.PriorityHigh
+	result, err := service.Notify(context.Background(), request)
 	if err != nil {
 		t.Fatalf("Notify() error = %v", err)
 	}
 	if !result.Success || result.Category != notify.ResultSuccess {
 		t.Fatalf("result = %#v, want success", result)
 	}
-	if sender.calls != 1 {
-		t.Fatalf("sender calls = %d, want 1", sender.calls)
+	if emailSender.calls != 1 || slackSender.calls != 1 {
+		t.Fatalf("calls email=%d slack=%d, want 1 each", emailSender.calls, slackSender.calls)
 	}
-	if sender.recipient.ID != "ops" {
-		t.Fatalf("recipient ID = %q, want ops", sender.recipient.ID)
-	}
-	if sender.config.Type != notify.ChannelEmail {
-		t.Fatalf("channel type = %q, want email", sender.config.Type)
+	if emailSender.delivery.DestinationID != "ops-email" || slackSender.delivery.DestinationID != "ops-slack" {
+		t.Fatalf("deliveries email=%#v slack=%#v", emailSender.delivery, slackSender.delivery)
 	}
 }
 
-func TestNotifyValidatesAttachmentsBeforeDispatch(t *testing.T) {
-	sender := &fakeSender{
-		result: notify.SuccessResult(notify.ChannelEmail, "accepted"),
+func TestNotifyUsesCatchAllWhenNoRouteMatches(t *testing.T) {
+	emailSender := &fakeSender{name: notify.ChannelEmail, result: notify.SuccessResult(notify.ChannelEmail, "email accepted")}
+	service := app.New(validConfiguration(t), emailSender)
+
+	result, err := service.Notify(context.Background(), validRequest())
+	if err != nil {
+		t.Fatalf("Notify() error = %v", err)
 	}
-	service := app.New(validConfiguration(), sender)
+	if !result.Success {
+		t.Fatalf("result = %#v, want success", result)
+	}
+	if emailSender.calls != 1 || emailSender.delivery.RouteID != "catch_all" {
+		t.Fatalf("email calls=%d delivery=%#v", emailSender.calls, emailSender.delivery)
+	}
+}
+
+func TestNotifyValidatesAttachmentsAndStripsUnsupportedDestinations(t *testing.T) {
+	emailSender := &fakeSender{name: notify.ChannelEmail, result: notify.SuccessResult(notify.ChannelEmail, "email accepted")}
+	slackSender := &fakeSender{name: notify.ChannelSlack, result: notify.SuccessResult(notify.ChannelSlack, "slack accepted")}
+	service := app.New(validConfiguration(t), emailSender, slackSender)
 	request := validRequest()
+	request.Category = "backup"
+	request.Priority = notify.PriorityHigh
 	request.Attachments = []notify.Attachment{{Path: writeTempFile(t, "report.txt", "plain text")}}
 
 	result, err := service.Notify(context.Background(), request)
@@ -51,57 +68,68 @@ func TestNotifyValidatesAttachmentsBeforeDispatch(t *testing.T) {
 	if !result.Success {
 		t.Fatalf("result = %#v, want success", result)
 	}
-	if len(sender.request.Attachments) != 1 {
-		t.Fatalf("sender attachments length = %d, want 1", len(sender.request.Attachments))
+	if len(emailSender.request.Attachments) != 1 {
+		t.Fatalf("email attachments = %d, want 1", len(emailSender.request.Attachments))
 	}
-	attachment := sender.request.Attachments[0]
-	if attachment.Filename != "report.txt" {
-		t.Fatalf("Filename = %q, want report.txt", attachment.Filename)
+	if len(slackSender.request.Attachments) != 0 {
+		t.Fatalf("slack attachments = %d, want stripped", len(slackSender.request.Attachments))
 	}
-	if attachment.Size == 0 {
-		t.Fatal("Size = 0, want file size")
+	logData := readLog(t, serviceLogPath(t))
+	if !strings.Contains(logData, "attachments omitted") {
+		t.Fatalf("log = %q, want attachment omission", logData)
 	}
-	if attachment.ContentType == "" {
-		t.Fatal("ContentType is empty")
+}
+
+func TestNotifyAttemptsAllDeliveriesAndReturnsPartialFailure(t *testing.T) {
+	wantErr := diagnostics.ForChannel(diagnostics.CategoryDeliveryFailure, notify.ChannelEmail, "provider rejected password=super-secret")
+	emailSender := &fakeSender{name: notify.ChannelEmail, err: wantErr}
+	slackSender := &fakeSender{name: notify.ChannelSlack, result: notify.SuccessResult(notify.ChannelSlack, "slack accepted")}
+	service := app.New(validConfiguration(t), emailSender, slackSender)
+	request := validRequest()
+	request.Category = "backup"
+	request.Priority = notify.PriorityHigh
+
+	result, err := service.Notify(context.Background(), request)
+	if err == nil {
+		t.Fatal("Notify() error = nil, want partial delivery failure")
+	}
+	assertDiagnosticCategory(t, err, diagnostics.CategoryDeliveryFailure)
+	if result.Success || result.Category != diagnostics.CategoryDeliveryFailure {
+		t.Fatalf("result = %#v, want delivery_failure", result)
+	}
+	if emailSender.calls != 1 || slackSender.calls != 1 {
+		t.Fatalf("calls email=%d slack=%d, want all attempted", emailSender.calls, slackSender.calls)
+	}
+	logData := readLog(t, serviceLogPath(t))
+	if strings.Contains(logData, "super-secret") {
+		t.Fatalf("log leaked secret: %q", logData)
+	}
+	if !strings.Contains(logData, diagnostics.Redacted) {
+		t.Fatalf("log = %q, want redacted value", logData)
 	}
 }
 
 func TestNotifyReturnsValidationFailureBeforeDispatch(t *testing.T) {
-	sender := &fakeSender{}
-	service := app.New(validConfiguration(), sender)
+	sender := &fakeSender{name: notify.ChannelEmail}
+	service := app.New(validConfiguration(t), sender)
 	request := validRequest()
-	request.RecipientID = "missing"
+	request.SenderSystem = ""
 
 	result, err := service.Notify(context.Background(), request)
 	if err == nil {
-		t.Fatal("Notify() error = nil, want missing recipient error")
+		t.Fatal("Notify() error = nil, want validation error")
 	}
-	assertDiagnosticCategory(t, err, diagnostics.CategoryMissingConfig)
+	assertDiagnosticCategory(t, err, diagnostics.CategoryInvalidInput)
 	if sender.calls != 0 {
 		t.Fatalf("sender calls = %d, want 0", sender.calls)
 	}
-	if result.Success || result.Category != diagnostics.CategoryMissingConfig {
-		t.Fatalf("result = %#v, want missing_config failure", result)
-	}
-}
-
-func TestNotifyReturnsSenderFailure(t *testing.T) {
-	wantErr := diagnostics.ForChannel(diagnostics.CategoryDeliveryFailure, notify.ChannelEmail, "provider rejected request")
-	sender := &fakeSender{err: wantErr}
-	service := app.New(validConfiguration(), sender)
-
-	result, err := service.Notify(context.Background(), validRequest())
-	if err == nil {
-		t.Fatal("Notify() error = nil, want delivery error")
-	}
-	assertDiagnosticCategory(t, err, diagnostics.CategoryDeliveryFailure)
-	if result.Success || result.Category != diagnostics.CategoryDeliveryFailure || result.Channel != notify.ChannelEmail {
-		t.Fatalf("result = %#v, want delivery_failure for email", result)
+	if result.Success || result.Category != diagnostics.CategoryInvalidInput {
+		t.Fatalf("result = %#v, want invalid_input failure", result)
 	}
 }
 
 func TestNotifyRejectsMissingSenderRegistration(t *testing.T) {
-	service := app.New(validConfiguration())
+	service := app.New(validConfiguration(t))
 
 	result, err := service.Notify(context.Background(), validRequest())
 	if err == nil {
@@ -113,75 +141,91 @@ func TestNotifyRejectsMissingSenderRegistration(t *testing.T) {
 	}
 }
 
-func TestNotifyRejectsInvalidAttachmentsBeforeDispatch(t *testing.T) {
-	sender := &fakeSender{}
-	service := app.New(validConfiguration(), sender)
-	request := validRequest()
-	request.Attachments = []notify.Attachment{{Path: filepath.Join(t.TempDir(), "missing.txt")}}
-
-	result, err := service.Notify(context.Background(), request)
-	if err == nil {
-		t.Fatal("Notify() error = nil, want attachment error")
-	}
-	assertDiagnosticCategory(t, err, diagnostics.CategoryAttachmentError)
-	if sender.calls != 0 {
-		t.Fatalf("sender calls = %d, want 0", sender.calls)
-	}
-	if result.Success || result.Category != diagnostics.CategoryAttachmentError {
-		t.Fatalf("result = %#v, want attachment_error failure", result)
-	}
-}
-
 type fakeSender struct {
-	calls     int
-	result    notify.Result
-	err       error
-	request   notify.Request
-	recipient notify.Recipient
-	config    notify.ChannelConfig
+	name     string
+	calls    int
+	result   notify.Result
+	err      error
+	request  notify.Request
+	delivery notify.ResolvedDelivery
 }
 
 func (f *fakeSender) Name() string {
-	return notify.ChannelEmail
+	return f.name
 }
 
-func (f *fakeSender) Send(_ context.Context, request notify.Request, recipient notify.Recipient, config notify.ChannelConfig) (notify.Result, error) {
+func (f *fakeSender) Send(_ context.Context, request notify.Request, delivery notify.ResolvedDelivery) (notify.Result, error) {
 	f.calls++
 	f.request = request
-	f.recipient = recipient
-	f.config = config
+	f.delivery = delivery
 	return f.result, f.err
 }
 
 func validRequest() notify.Request {
 	return notify.Request{
 		SenderSystem: "BackupJob",
-		RecipientID:  "ops",
-		Channel:      notify.ChannelEmail,
 		Title:        "Backup failed",
 		Message:      "Nightly backup failed",
 	}
 }
 
-func validConfiguration() notify.Configuration {
+func validConfiguration(t *testing.T) notify.Configuration {
+	lastLogPath = filepath.Join(t.TempDir(), "noticli.delivery.log")
 	return notify.Configuration{
-		Recipients: map[string]notify.Recipient{
-			"ops": {
-				ID:      "ops",
-				Email:   "ops@example.com",
-				Enabled: true,
-			},
+		Destinations: map[string]notify.Destination{
+			"ops-email": {ID: "ops-email", Type: notify.ChannelEmail, Email: "ops@example.com", Enabled: true},
+			"ops-slack": {ID: "ops-slack", Type: notify.ChannelSlack, SlackDest: "#ops", Enabled: true},
 		},
-		Channels: map[string]notify.ChannelConfig{
-			notify.ChannelEmail: {
+		DeliveryAccounts: map[string]notify.DeliveryAccount{
+			"smtp-main": {
+				ID:               "smtp-main",
 				Type:             notify.ChannelEmail,
 				Enabled:          true,
-				Settings:         map[string]string{"from": "noticli@example.com"},
-				Secrets:          map[string]string{"smtp_password": "secret"},
+				Settings:         map[string]string{"from": "noticli@example.com", "host": "smtp.example.com", "port": "587"},
+				Secrets:          map[string]string{"smtp_password": "super-secret"},
 				AttachmentPolicy: notify.AttachmentPolicySupported,
 			},
+			"slack-main": {
+				ID:               "slack-main",
+				Type:             notify.ChannelSlack,
+				Enabled:          true,
+				Settings:         map[string]string{"workspace": "ops"},
+				Secrets:          map[string]string{"webhook_url": "https://hooks.slack.com/services/T/B/S"},
+				AttachmentPolicy: notify.AttachmentPolicyUnsupported,
+			},
 		},
+		Routes: []notify.Route{
+			{
+				ID:    "backup-high",
+				Match: notify.RouteMatch{Senders: []string{"BackupJob"}, Categories: []string{"backup"}, Priorities: []string{notify.PriorityHigh}},
+				Deliveries: []notify.Delivery{
+					{Account: "smtp-main", Destination: "ops-email"},
+					{Account: "slack-main", Destination: "ops-slack"},
+				},
+			},
+		},
+		CatchAll: notify.Route{ID: "catch_all", Deliveries: []notify.Delivery{{Account: "smtp-main", Destination: "ops-email"}}},
+		Logging:  notify.LoggingConfig{Path: lastLogPath},
 	}
+}
+
+var lastLogPath string
+
+func serviceLogPath(t *testing.T) string {
+	t.Helper()
+	if lastLogPath == "" {
+		t.Fatal("log path was not captured")
+	}
+	return lastLogPath
+}
+
+func readLog(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(%s) error = %v", path, err)
+	}
+	return string(data)
 }
 
 func assertDiagnosticCategory(t *testing.T, err error, want diagnostics.Category) {

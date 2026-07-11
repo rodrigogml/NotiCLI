@@ -57,8 +57,8 @@ func (Sender) Name() string {
 	return notify.ChannelEmail
 }
 
-func (s Sender) Send(ctx context.Context, request notify.Request, recipient notify.Recipient, config notify.ChannelConfig) (notify.Result, error) {
-	message, err := buildMessage(request, recipient, config)
+func (s Sender) Send(ctx context.Context, request notify.Request, delivery notify.ResolvedDelivery) (notify.Result, error) {
+	message, err := buildMessage(request, delivery.Destination, delivery.Account)
 	if err != nil {
 		return notify.FailureResult(diagnostics.CategoryInvalidConfig, notify.ChannelEmail, diagnostics.FromError(err).Message), err
 	}
@@ -75,7 +75,7 @@ func (s Sender) Send(ctx context.Context, request notify.Request, recipient noti
 	return notify.SuccessResult(notify.ChannelEmail, "email accepted"), nil
 }
 
-func buildMessage(request notify.Request, recipient notify.Recipient, config notify.ChannelConfig) (Message, error) {
+func buildMessage(request notify.Request, destination notify.Destination, config notify.DeliveryAccount) (Message, error) {
 	if config.Type != notify.ChannelEmail {
 		return Message{}, invalidConfig("channel config type must be email")
 	}
@@ -96,9 +96,9 @@ func buildMessage(request notify.Request, recipient notify.Recipient, config not
 	if err != nil {
 		return Message{}, err
 	}
-	to, ok := recipient.DestinationFor(notify.ChannelEmail)
+	to, ok := destination.Address()
 	if !ok {
-		return Message{}, invalidConfig("recipient has no email destination")
+		return Message{}, invalidConfig("destination has no email address")
 	}
 
 	username := strings.TrimSpace(config.Settings[settingUsername])
@@ -121,7 +121,7 @@ func buildMessage(request notify.Request, recipient notify.Recipient, config not
 	}, nil
 }
 
-func requiredSetting(config notify.ChannelConfig, key string) (string, error) {
+func requiredSetting(config notify.DeliveryAccount, key string) (string, error) {
 	value := strings.TrimSpace(config.Settings[key])
 	if value == "" {
 		return "", invalidConfig(fmt.Sprintf("required setting %q is missing", key))
@@ -129,7 +129,7 @@ func requiredSetting(config notify.ChannelConfig, key string) (string, error) {
 	return value, nil
 }
 
-func requiredSecret(config notify.ChannelConfig, key string) (string, error) {
+func requiredSecret(config notify.DeliveryAccount, key string) (string, error) {
 	value := strings.TrimSpace(config.Secrets[key])
 	if value == "" {
 		return "", invalidConfig(fmt.Sprintf("required secret %q is missing", key))
