@@ -1,0 +1,5 @@
+version=v2.0.0
+commit=e2bb000f939b6f9132e0d43c11212f112a25309c
+official_release=true
+release_url=https://github.com/rodrigogml/NotiCLI/releases/tag/v2.0.0
+built_at=2026-07-11T21:18:29Z
