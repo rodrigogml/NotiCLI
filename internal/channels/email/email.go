@@ -114,7 +114,7 @@ func buildMessage(request notify.Request, destination notify.Destination, config
 		From:         from,
 		FromName:     strings.TrimSpace(config.Settings[settingFromName]),
 		To:           to,
-		Subject:      formatSubject(request.SenderSystem, request.Title),
+		Subject:      formatSubject(request),
 		Body:         request.Message,
 		SenderSystem: request.SenderSystem,
 		Attachments:  request.Attachments,
@@ -222,13 +222,14 @@ func formatAddress(name, address string) string {
 	return (&mail.Address{Name: name, Address: address}).String()
 }
 
-func formatSubject(senderSystem, title string) string {
-	senderSystem = sanitizeHeaderValue(strings.TrimSpace(senderSystem))
-	title = sanitizeHeaderValue(strings.TrimSpace(title))
+func formatSubject(request notify.Request) string {
+	senderSystem := sanitizeHeaderValue(strings.TrimSpace(request.SenderSystem))
+	priority := sanitizeHeaderValue(request.EffectivePriority())
+	title := sanitizeHeaderValue(strings.TrimSpace(request.Title))
 	if senderSystem == "" {
 		return title
 	}
-	return fmt.Sprintf("[%s] %s", senderSystem, title)
+	return fmt.Sprintf("[%s] [%s] %s", senderSystem, priority, title)
 }
 
 func sanitizeHeaderValue(value string) string {

@@ -41,8 +41,8 @@ func TestSendBuildsMessageAndUsesTransport(t *testing.T) {
 	if transport.message.To != "ops@example.com" {
 		t.Fatalf("To = %q, want ops@example.com", transport.message.To)
 	}
-	if transport.message.Subject != "[BackupJob] Backup failed" {
-		t.Fatalf("Subject = %q, want [BackupJob] Backup failed", transport.message.Subject)
+	if transport.message.Subject != "[BackupJob] [NORMAL] Backup failed" {
+		t.Fatalf("Subject = %q, want [BackupJob] [NORMAL] Backup failed", transport.message.Subject)
 	}
 	if transport.message.Body != "Nightly backup failed" {
 		t.Fatalf("Body = %q, want Nightly backup failed", transport.message.Body)
@@ -126,7 +126,7 @@ func TestFormatPlainTextMessageIncludesHeadersAndBody(t *testing.T) {
 		From:         "noticli@example.com",
 		FromName:     "NotiCLI",
 		To:           "ops@example.com",
-		Subject:      "[BackupJob] Backup failed",
+		Subject:      "[BackupJob] [NORMAL] Backup failed",
 		Body:         "Nightly backup failed",
 		SenderSystem: "BackupJob",
 	})
@@ -134,7 +134,7 @@ func TestFormatPlainTextMessageIncludesHeadersAndBody(t *testing.T) {
 	for _, want := range []string{
 		"From: \"NotiCLI\" <noticli@example.com>\r\n",
 		"To: ops@example.com\r\n",
-		"Subject: [BackupJob] Backup failed\r\n",
+		"Subject: [BackupJob] [NORMAL] Backup failed\r\n",
 		"X-NotiCLI-Sender: BackupJob\r\n",
 		"\r\nNightly backup failed\r\n",
 	} {
@@ -149,7 +149,7 @@ func TestFormatSMTPMessageIncludesAttachmentPart(t *testing.T) {
 		From:     "noticli@example.com",
 		FromName: "NotiCLI",
 		To:       "ops@example.com",
-		Subject:  "[BackupJob] Backup failed",
+		Subject:  "[BackupJob] [NORMAL] Backup failed",
 		Body:     "Nightly backup failed",
 		Attachments: []notify.Attachment{{
 			Path:        writeTempFile(t, "report.txt", "plain text"),
@@ -163,7 +163,7 @@ func TestFormatSMTPMessageIncludesAttachmentPart(t *testing.T) {
 	formatted := string(data)
 	for _, want := range []string{
 		"From: \"NotiCLI\" <noticli@example.com>",
-		"Subject: [BackupJob] Backup failed",
+		"Subject: [BackupJob] [NORMAL] Backup failed",
 		"Content-Type: multipart/mixed;",
 		"Content-Disposition: attachment; filename=\"report.txt\"",
 		"Content-Transfer-Encoding: base64",

@@ -52,7 +52,7 @@ func TestSendPostsMessageToTelegramAPI(t *testing.T) {
 	if gotPayload["chat_id"] != "12345" {
 		t.Fatalf("chat_id = %q, want 12345", gotPayload["chat_id"])
 	}
-	if gotPayload["text"] != "[BackupJob] Backup failed\n\nNightly backup failed" {
+	if gotPayload["text"] != "[BackupJob] [NORMAL] Backup failed\n\nNightly backup failed" {
 		t.Fatalf("text = %q", gotPayload["text"])
 	}
 	if gotPayload["parse_mode"] != "HTML" {
@@ -85,7 +85,7 @@ func TestSendExplicitPrivateModeDoesNotRequireTopicStore(t *testing.T) {
 	if _, ok := gotPayload["message_thread_id"]; ok {
 		t.Fatalf("message_thread_id present for private send: %#v", gotPayload)
 	}
-	if gotPayload["text"] != "[BackupJob] Backup failed\n\nNightly backup failed" {
+	if gotPayload["text"] != "[BackupJob] [NORMAL] Backup failed\n\nNightly backup failed" {
 		t.Fatalf("text = %q", gotPayload["text"])
 	}
 }

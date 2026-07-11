@@ -309,7 +309,7 @@ func formatText(request notify.Request, destination notify.Destination) string {
 	title := strings.TrimSpace(request.Title)
 	body := strings.TrimSpace(request.Message)
 	if destination.EffectiveTelegramDeliveryMode() == notify.TelegramDeliveryModePrivate && strings.TrimSpace(request.SenderSystem) != "" && title != "" {
-		title = fmt.Sprintf("[%s] %s", strings.TrimSpace(request.SenderSystem), title)
+		title = fmt.Sprintf("[%s] [%s] %s", strings.TrimSpace(request.SenderSystem), request.EffectivePriority(), title)
 	}
 	if title == "" {
 		return body

@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.0.1 - 2026-07-11
+
+- Updated email subjects and private Telegram message titles to include priority as `[sender] [HIGH|NORMAL|LOW] title`.
+- Expanded configuration documentation for broadcast routing and Telegram `private`, `topics` and `thread` delivery modes.
+
 ## v2.0.0 - 2026-07-11
 
 - Introduced broadcast routing: callers now provide sender, optional category, priority, title, message and attachments while NotiCLI resolves routes from configuration.

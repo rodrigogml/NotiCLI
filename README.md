@@ -125,6 +125,36 @@ Example `noticli.json`:
 
 Secret values are redacted from user-visible diagnostics and delivery logs. Do not put real credentials in examples, issue reports or shared logs.
 
+### Configuration Reference
+
+Top-level keys:
+
+| Key | Required | Description |
+|-----|----------|-------------|
+| `destinations` | yes | Real delivery targets, keyed by destination ID. Each destination has a `type` matching one supported channel. |
+| `delivery_accounts` | yes | Provider credentials and channel settings used to send messages. Each account has a `type` matching one supported channel. |
+| `routes` | no | Ordered list of routing rules. Multiple routes can match one request. |
+| `catch_all` | yes | Fallback deliveries used when no route matches. Required to avoid silent drops. |
+| `logging` | no | Delivery log settings. Empty or missing `path` writes `noticli.delivery.log` beside the active config. |
+
+Route `match` fields are optional filters:
+
+| Field | Matches |
+|-------|---------|
+| `senders` | `--sender` value |
+| `categories` | `--category` value |
+| `priorities` | effective `--priority` value: `HIGH`, `NORMAL` or `LOW` |
+
+When a route omits a match field, that field does not filter. If several routes match, NotiCLI attempts every configured delivery from every matched route. Deliveries are not deduplicated automatically. If no route matches, NotiCLI uses `catch_all`.
+
+Each delivery links one account to one destination:
+
+```json
+{"account": "telegram-main", "destination": "ops-telegram-topics"}
+```
+
+The account and destination must have the same channel `type`. For example, an account with `"type": "telegram"` can only deliver to destinations with `"type": "telegram"`.
+
 ## Configuration Scope
 
 The recommended setup is to keep NotiCLI configuration centralized in the NotiCLI config file and omit `--config` on callers that do not need to override it.
@@ -160,19 +190,25 @@ Diagnostic output is not a secret storage boundary. Avoid putting credentials or
 
 ## Channel Setup
 
-Routes match when every configured criterion in `match` matches the request. Missing criteria do not filter. Multiple routes can match, and every configured delivery is attempted without automatic deduplication. If no route matches, `catch_all` is required and used.
-
 If `logging.path` is empty or omitted, NotiCLI writes delivery events to `noticli.delivery.log` beside the active config file. Delivery failures and attachment omissions include route, destination, account, channel type, sender, category and priority.
 
-Email requires SMTP settings under an email delivery account: `host`, `port`, `from` and optional `from_name` and `username`. It requires `secrets.smtp_password`. If `from_name` is set, it is used as the display name in the email `From` header. If `username` is omitted, NotiCLI uses `from` for SMTP authentication. Email subjects are prefixed with the calling sender as `[sender] title`.
+Email requires SMTP settings under an email delivery account: `host`, `port`, `from` and optional `from_name` and `username`. It requires `secrets.smtp_password`. If `from_name` is set, it is used as the display name in the email `From` header. If `username` is omitted, NotiCLI uses `from` for SMTP authentication. Email subjects are prefixed with the calling sender as `[sender] [HIGH|NORMAL|LOW] title`.
 
 Telegram requires a bot token in a Telegram delivery account under `secrets.token`. A Telegram destination can use one of three delivery modes:
 
-- Private chat delivery: omit `telegram_delivery_mode` or set it to `private`, and set `telegram_chat_id`. Private Telegram titles are formatted as `[sender] title`.
-- Topic group delivery: set `telegram_delivery_mode` to `topics`, set `telegram_topic_group_chat_id` to a topic-enabled supergroup ID, and optionally set `telegram_topic_group_name` for diagnostics. Topic messages use the topic as sender context, so titles are sent without the `[sender]` prefix.
-- Fixed thread delivery: set `telegram_delivery_mode` to `thread`, set `telegram_topic_group_chat_id`, and set `message_thread_id`.
+| Mode | Destination fields | Runtime behavior | State file usage |
+|------|--------------------|------------------|------------------|
+| `private` | `telegram_chat_id` | Sends directly to one private chat. Titles are formatted as `[sender] [HIGH|NORMAL|LOW] title`. | Not used. |
+| `topics` | `telegram_topic_group_chat_id`, optional `telegram_topic_group_name` | Sends to a topic-enabled supergroup. NotiCLI creates or reuses one forum topic per destination/group/sender. Topic titles are based on `--sender`; route definitions do not currently override the topic name. | Used to remember `sender -> message_thread_id` associations. |
+| `thread` | `telegram_topic_group_chat_id`, `message_thread_id` | Sends to one fixed existing Telegram topic/thread declared in config. Use this when the thread ID is known and should be managed as configuration. | Not used for that destination. |
 
-Topic delivery stores generated sender-topic associations in a sibling state file next to the active config. For `config/noticli.json` beside the resolved executable path, the state file is `config/noticli.telegram-topics.json` in the same directory. In production, the release `config/` directory is symlinked to the centralized config tree, so the state file remains under `/opt/NotiCLI/config/`. Back up this file with the production installation; if it is lost, NotiCLI may create replacement topics because Telegram bots cannot list or find every existing topic by name. Before creating a new topic, NotiCLI verifies that the state file can be written; write failures abort the notification with an error instead of creating an untracked topic. Future assisted commands such as `/noticli_bind`, `/noticli_unbind` and `/noticli_topics` are reserved for binding or listing manually managed topics, but they are not part of the current CLI send flow.
+If `telegram_delivery_mode` is omitted, Telegram defaults to `private`.
+
+For automatic `topics` delivery, the generated topic name is derived from the request `--sender` value. NotiCLI normalizes the sender into a Telegram-compatible topic name and disambiguates collisions when two senders normalize to the same text. There is no route-level parameter in the current release to choose a different automatic topic name. To route to a manually chosen topic, declare it as a fixed `thread` destination and point a route at that destination.
+
+Topic delivery stores generated sender-topic associations in a sibling state file next to the active config. For `config/noticli.json` beside the resolved executable path, the state file is `config/noticli.telegram-topics.json` in the same directory. In production, the release `config/` directory is symlinked to the centralized config tree, so the state file remains under `/opt/NotiCLI/config/`.
+
+The main config stays declarative: it defines destinations, accounts and routes. The topic state file is runtime state: it records the Telegram `message_thread_id` returned by Telegram for automatic topics, together with the destination/group/sender identity, topic name, timestamps and status. This file must remain writable by the NotiCLI runtime, is protected by locking and backup logic, and should be backed up with the production installation. If it is lost, NotiCLI may create replacement topics because Telegram bots cannot list or find every existing topic by name. Before creating a new topic, NotiCLI verifies that the state file can be written; write failures abort the notification with an error instead of creating an untracked topic. Future assisted commands such as `/noticli_bind`, `/noticli_unbind` and `/noticli_topics` are reserved for binding or listing manually managed topics, but they are not part of the current CLI send flow.
 
 Slack requires an incoming webhook URL in a Slack delivery account under `secrets.webhook_url` and a Slack destination `slack_destination`. The initial MVP sends text messages through the webhook only.
 
