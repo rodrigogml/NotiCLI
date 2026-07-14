@@ -180,6 +180,48 @@ func TestRunWithSendersTelegramTopicsEndToEnd(t *testing.T) {
 	}
 }
 
+func TestRunWatchTelegramBOTRequiresAccountWhenMultipleTelegramAccountsExist(t *testing.T) {
+	configPath := writeMultipleTelegramAccountsConfig(t)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := cli.Run([]string{
+		"watchTelegramBOT",
+		"--config", configPath,
+		"--max-seconds", "1",
+		"--log", filepath.Join(t.TempDir(), "events.jsonl"),
+	}, &stdout, &stderr)
+	if code != diagnostics.ExitInvalidInput {
+		t.Fatalf("Run() exit code = %d, want invalid input; stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "multiple telegram delivery accounts") {
+		t.Fatalf("stderr = %q, want multiple account diagnostic", stderr.String())
+	}
+}
+
+func TestRunWatchTelegramBOTRejectsMissingTokenBeforePolling(t *testing.T) {
+	configPath := writeTelegramAccountWithoutTokenConfig(t)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := cli.Run([]string{
+		"watchTelegramBOT",
+		"--config", configPath,
+		"--account", "telegram-main",
+		"--max-seconds", "1",
+		"--log", filepath.Join(t.TempDir(), "events.jsonl"),
+	}, &stdout, &stderr)
+	if code != diagnostics.ExitInvalidConfig {
+		t.Fatalf("Run() exit code = %d, want invalid config; stderr=%q", code, stderr.String())
+	}
+	if strings.Contains(stderr.String(), "123456:ABCDEF") {
+		t.Fatalf("stderr leaked token: %q", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "required secret \"token\" is missing") {
+		t.Fatalf("stderr = %q, want missing token diagnostic", stderr.String())
+	}
+}
+
 func sendArgs(configPath string, extra ...string) []string {
 	args := []string{
 		"send",
@@ -278,6 +320,46 @@ func writeTelegramTopicsConfig(t *testing.T) string {
 			}
 		],
 		"catch_all": {"deliveries": [{"account": "telegram-main", "destination": "ops-telegram-topics"}]}
+	}`)
+}
+
+func writeMultipleTelegramAccountsConfig(t *testing.T) string {
+	return writeFile(t, "telegram-watch-multiple.json", `{
+		"destinations": {
+			"ops-telegram": {"type": "telegram", "telegram_chat_id": "12345"}
+		},
+		"delivery_accounts": {
+			"telegram-main": {
+				"type": "telegram",
+				"settings": {},
+				"secrets": {"token": "123456:ABCDEF"},
+				"attachments": "unsupported"
+			},
+			"telegram-secondary": {
+				"type": "telegram",
+				"settings": {},
+				"secrets": {"token": "654321:FEDCBA"},
+				"attachments": "unsupported"
+			}
+		},
+		"catch_all": {"deliveries": [{"account": "telegram-main", "destination": "ops-telegram"}]}
+	}`)
+}
+
+func writeTelegramAccountWithoutTokenConfig(t *testing.T) string {
+	return writeFile(t, "telegram-watch-missing-token.json", `{
+		"destinations": {
+			"ops-telegram": {"type": "telegram", "telegram_chat_id": "12345"}
+		},
+		"delivery_accounts": {
+			"telegram-main": {
+				"type": "telegram",
+				"settings": {},
+				"secrets": {},
+				"attachments": "unsupported"
+			}
+		},
+		"catch_all": {"deliveries": [{"account": "telegram-main", "destination": "ops-telegram"}]}
 	}`)
 }
 

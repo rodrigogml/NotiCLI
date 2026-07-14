@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.0.3 - 2026-07-14
+
+- Added `watchTelegramBOT` to observe Telegram Bot API updates with long polling, structured terminal output and JSONL event logs for discovering chat, user and thread IDs.
+- Documented watcher flags and account selection behavior.
+
 ## v2.0.2 - 2026-07-11
 
 - Updated CLI usage examples to reference the stable `/opt/NotiCLI/current/config/noticli.json` production config path.

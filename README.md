@@ -22,7 +22,15 @@ go test ./...
 noticli send --config ./noticli.json --sender BackupJob --category backup --priority HIGH --title "Backup failed" --message "Nightly backup failed on server-01"
 ```
 
+To inspect Telegram Bot events and discover chat, user and thread IDs:
+
+```sh
+noticli watchTelegramBOT --config ./noticli.json --account telegram-main --max-seconds 60
+```
+
 ### Flags
+
+`send` flags:
 
 | Flag | Required | Description |
 |------|----------|-------------|
@@ -33,6 +41,16 @@ noticli send --config ./noticli.json --sender BackupJob --category backup --prio
 | `--title <text>` | yes | Notification title or subject. |
 | `--message <text>` | yes | Notification body. |
 | `--attach <path>` | no | Readable file attachment. May be repeated. Destinations whose delivery account does not support attachments receive the message without attachments, and the omission is logged. |
+
+`watchTelegramBOT` flags:
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--config <path>` | no | JSON configuration file override. Defaults to `config/noticli.json` beside the resolved executable path. |
+| `--account <id>` | conditional | Telegram delivery account to watch. Required only when multiple enabled Telegram accounts exist. |
+| `--poll-seconds <n>` | no | Telegram `getUpdates` long-poll timeout in seconds. Defaults to `3`. |
+| `--max-seconds <n>` | no | Maximum watch duration. Defaults to `0`, which runs until `Ctrl+C`. |
+| `--log <path>` | no | JSONL event log path. Defaults to `tmp/noticli.telegram-bot-events.jsonl`. |
 
 ## Configuration
 
@@ -209,6 +227,8 @@ For automatic `topics` delivery, the generated topic name is derived from the re
 Topic delivery stores generated sender-topic associations in a sibling state file next to the active config. For `config/noticli.json` beside the resolved executable path, the state file is `config/noticli.telegram-topics.json` in the same directory. In production, the release `config/` directory is symlinked to the centralized config tree, so the state file remains under `/opt/NotiCLI/config/`.
 
 The main config stays declarative: it defines destinations, accounts and routes. The topic state file is runtime state: it records the Telegram `message_thread_id` returned by Telegram for automatic topics, together with the destination/group/sender identity, topic name, timestamps and status. This file must remain writable by the NotiCLI runtime, is protected by locking and backup logic, and should be backed up with the production installation. If it is lost, NotiCLI may create replacement topics because Telegram bots cannot list or find every existing topic by name. Before creating a new topic, NotiCLI verifies that the state file can be written; write failures abort the notification with an error instead of creating an untracked topic. Future assisted commands such as `/noticli_bind`, `/noticli_unbind` and `/noticli_topics` are reserved for binding or listing manually managed topics, but they are not part of the current CLI send flow.
+
+`watchTelegramBOT` uses the configured Telegram delivery account token and calls Telegram Bot API `getUpdates` in long-polling mode. It does not send messages or mutate NotiCLI topic state. Each received update is printed in a compact structured form and appended as JSONL to the watcher log, including the raw Telegram update and extracted IDs such as `chat.id`, `from.id` and `message_thread_id` when present. The command exits with `Ctrl+C`, or automatically when `--max-seconds` is greater than `0`.
 
 Slack requires an incoming webhook URL in a Slack delivery account under `secrets.webhook_url` and a Slack destination `slack_destination`. The initial MVP sends text messages through the webhook only.
 

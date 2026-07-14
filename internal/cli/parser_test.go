@@ -68,6 +68,81 @@ func TestParseSendDefaultsPriorityAndConfigPath(t *testing.T) {
 	}
 }
 
+func TestParseWatchTelegramBOTMapsFlags(t *testing.T) {
+	request, err := cli.ParseWatchTelegramBOTWithExecutablePath([]string{
+		"--config", "./noticli.json",
+		"--account", "telegram-main",
+		"--poll-seconds", "5",
+		"--max-seconds", "60",
+		"--log", "./tmp/events.jsonl",
+	}, filepath.Join(t.TempDir(), "noticli"))
+	if err != nil {
+		t.Fatalf("ParseWatchTelegramBOT() error = %v", err)
+	}
+
+	if request.ConfigPath != "./noticli.json" {
+		t.Fatalf("ConfigPath = %q", request.ConfigPath)
+	}
+	if request.AccountID != "telegram-main" {
+		t.Fatalf("AccountID = %q", request.AccountID)
+	}
+	if request.PollSeconds != 5 {
+		t.Fatalf("PollSeconds = %d", request.PollSeconds)
+	}
+	if request.MaxSeconds != 60 {
+		t.Fatalf("MaxSeconds = %d", request.MaxSeconds)
+	}
+	if request.LogPath != "./tmp/events.jsonl" {
+		t.Fatalf("LogPath = %q", request.LogPath)
+	}
+}
+
+func TestParseWatchTelegramBOTDefaultsConfigAndRuntimeFlags(t *testing.T) {
+	executablePath := filepath.Join(t.TempDir(), "bin", "noticli")
+	request, err := cli.ParseWatchTelegramBOTWithExecutablePath(nil, executablePath)
+	if err != nil {
+		t.Fatalf("ParseWatchTelegramBOT() error = %v", err)
+	}
+
+	wantConfig := filepath.Join(filepath.Dir(executablePath), "config", cli.DefaultConfigFileName)
+	if request.ConfigPath != wantConfig {
+		t.Fatalf("ConfigPath = %q, want %q", request.ConfigPath, wantConfig)
+	}
+	if request.PollSeconds != 3 {
+		t.Fatalf("PollSeconds = %d, want 3", request.PollSeconds)
+	}
+	if request.MaxSeconds != 0 {
+		t.Fatalf("MaxSeconds = %d, want 0", request.MaxSeconds)
+	}
+	if request.LogPath != cli.DefaultWatchLogPath {
+		t.Fatalf("LogPath = %q, want %q", request.LogPath, cli.DefaultWatchLogPath)
+	}
+}
+
+func TestParseWatchTelegramBOTRejectsInvalidInputs(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "empty config", args: []string{"--config", ""}},
+		{name: "empty account", args: []string{"--account", ""}},
+		{name: "zero poll", args: []string{"--poll-seconds", "0"}},
+		{name: "negative poll", args: []string{"--poll-seconds", "-1"}},
+		{name: "negative max", args: []string{"--max-seconds", "-1"}},
+		{name: "empty log", args: []string{"--log", ""}},
+		{name: "unexpected argument", args: []string{"extra"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := cli.ParseWatchTelegramBOTWithExecutablePath(tt.args, filepath.Join(t.TempDir(), "noticli"))
+			if err == nil {
+				t.Fatal("ParseWatchTelegramBOT() error = nil, want error")
+			}
+		})
+	}
+}
+
 func TestDefaultConfigPathUsesReleaseConfigDirectoryOnly(t *testing.T) {
 	root := t.TempDir()
 
